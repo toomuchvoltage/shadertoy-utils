@@ -37,7 +37,7 @@ First parameter to `imageToLumBuffer()` is the filename. The second parameter is
 
 Fourth parameter allows you to concatenate previously generated code with this one so that you can use all of your images in the same shader.
 
-Fifth parameter is for images generated after the first one since they need their own unique IDs. Again it's just for convenience so you don't have to manually change function/variable names.
+Fifth parameter is for images generated after the first one since they need their own unique IDs. Again, it's just for convenience so you don't have to manually change function/variable names.
 
 Your images cannot in total (for one Shadertoy) use up more than 4096 uniforms (4096 * 4 pixels). Choose your resolutions wisely :)
 
