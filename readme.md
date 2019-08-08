@@ -67,6 +67,8 @@ For comparison, check out `madworld_8bit_highfreq.mp3` (which is 8bit PCM -- cre
 
 # License
 
-M.I.T.
+M.I.T. for the code
+
+Everything else belongs to their respective copyright holders
 
 Go nuts.
