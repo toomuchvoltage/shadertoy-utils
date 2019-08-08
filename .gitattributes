@@ -3,3 +3,4 @@
 *.xml linguist-detectable=false
 *.txt linguist-detectable=false
 *.png linguist-detectable=false
+*.html linguist-detectable=false
