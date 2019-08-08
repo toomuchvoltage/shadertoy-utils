@@ -1,6 +1,5 @@
 *.txt linguist-detectable=false
 *.mp3 linguist-detectable=false
 *.xml linguist-detectable=false
-*.txt linguist-detectable=false
 *.png linguist-detectable=false
 *.html linguist-detectable=false
