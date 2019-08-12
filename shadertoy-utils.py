@@ -55,7 +55,7 @@ wroteUnpackUtilityForSound = False
 """   We're basically normalizing and packing 4 samples per uint. Samples are denormalized after unpacking.    """
 """   At the end of the day you have about 4096 uniforms to play with... so either reduce frequency or length. """
 """   Have fun! ;)                                                                                             """
-def soundToShaderToy(inputMP3, outputWAV, freq, startSecond, lenSeconds):
+def soundToShaderToy(inputMP3, outputWAV, freq, startSecond, lenSeconds, makeFunction = False):
 
 	global wroteUnpackUtilityForSound, ffmpegPath
 
@@ -68,6 +68,7 @@ def soundToShaderToy(inputMP3, outputWAV, freq, startSecond, lenSeconds):
 			data.append (0.0)
 
 	countItems = 0
+	countT = 0
 	ABCD = 'A'
 	constructedUint32 = 0
 	
@@ -77,7 +78,10 @@ def soundToShaderToy(inputMP3, outputWAV, freq, startSecond, lenSeconds):
 		shaderSource = writeUnpackVec4()
 		wroteUnpackUtilityForSound = True
 
-	shaderSource += "uint shaderBuf[%d] = uint[](" % (len(data)/4)
+	if makeFunction == True:
+		timeToUintDict = dict()
+	else:
+		timeSeries = []
 
 	for i in data:
 		sampleNorm = ((i/32768.0) + 1.0) * 0.5
@@ -95,17 +99,45 @@ def soundToShaderToy(inputMP3, outputWAV, freq, startSecond, lenSeconds):
 			ABCD = 'A'
 
 		if ABCD == 'A':
-			if countItems != len(data)-1:
+			if makeFunction == True:
+				if constructedUint32 != 0:
+					if constructedUint32 not in timeToUintDict:
+						timeToUintDict[constructedUint32] = []
+					timeToUintDict[constructedUint32].append (countT)
+				countT += 1
+				if countItems == len(data)-1:
+					break
+			else:
+				timeSeries.append (constructedUint32)
+				if countItems == len(data)-1:
+					break
+		countItems += 1
+
+	if makeFunction == False:
+		countItems = 0
+		shaderSource += "uint shaderBuf[%d] = uint[](" % (len(data)/4)
+		for constructedUint32 in timeSeries:
+			if countItems != len (timeSeries) - 1:
 				shaderSource += ("%uu," % constructedUint32)
 			else:
 				shaderSource += ("%uu);" % constructedUint32)
 				break
-		countItems += 1
+			countItems += 1
+	else:
+		shaderSource += "uint getSample(int curT)\n{\n\tswitch (curT)\n\t{\n";
+		for constructedUint32 in timeToUintDict:
+			for countT in timeToUintDict[constructedUint32]:
+				shaderSource += "	case %d:\n" % (countT);		
+			shaderSource += "\t\treturn %uu;\n" % (constructedUint32);		
+		shaderSource += "	}\n\treturn 0u;\n}\n";
 
 	shaderSource += "\n\n";
 	shaderSource += "vec2 mainSound( float time )\n{\n"
 	shaderSource += "	int curTime = int(time*%.1f) %% %d;\n" % (float(freq),len(data))
-	shaderSource += "	uint packedSample = shaderBuf[curTime/4];\n"
+	if makeFunction == True:
+		shaderSource += "	uint packedSample = getSample(curTime/4);\n"
+	else:
+		shaderSource += "	uint packedSample = shaderBuf[curTime/4];\n"
 	shaderSource += "	vec4 unpackedSound = unpackVec4 (packedSample);\n"
 	shaderSource += "	if (curTime % 4 == 0) return vec2 (unpackedSound.x * 2.0 - 1.0);\n"
 	shaderSource += "	else if (curTime % 4 == 1) return vec2 (unpackedSound.y * 2.0 - 1.0);\n"
