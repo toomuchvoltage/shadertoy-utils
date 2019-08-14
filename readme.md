@@ -67,7 +67,7 @@ For comparison, check out `madworld_8bit_highfreq.mp3` (which is 8bit PCM -- cre
 
 # Known issues
 
-Apparently ANGLE's OpenGL backend does not like large uniform arrays. '\_o.O_/`
+Apparently ANGLE's OpenGL backend does not like large uniform arrays. '\\_o.O_/`
 
 # License
 
