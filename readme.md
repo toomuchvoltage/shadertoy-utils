@@ -65,9 +65,13 @@ Generally speaking, going from 16bit PCM to 8bit PCM isn't as detrimental as goi
 
 For comparison, check out `madworld_8bit_highfreq.mp3` (which is 8bit PCM -- created with Audacity -- at 44KHz) with `madworld.wav` (which -- by default -- is 16bit PCM at 1.2KHz). While `madworld_8bit_highfreq.mp3` has a bit of static, the piano sounds WAY better than the same tune at 1.2KHz with higher precision samples.
 
+# Known issues
+
+Apparently ANGLE's OpenGL backend does not like large uniform arrays. '\_o.O_/`
+
 # License
 
-M.I.T. for the code
+M.I.T. for the code.
 
 Everything else belongs to their respective copyright holders.
 
