@@ -147,7 +147,7 @@ def soundToShaderToy(inputMP3, outputWAV, freq, startSecond, lenSeconds, makeFun
 	return shaderSource
 
 wroteUnpackUtility = False
-def imageToLumBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0):
+def imageToLumBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, blackAndWhite = False):
 
 	global wroteUnpackUtility
 
@@ -160,15 +160,23 @@ def imageToLumBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0):
 	im = Image.open(imgName)
 	pix = im.load()
 	imgWidth = im.size[0]
-	if imgWidth % 4 != 0:
-		imgWidth += 4 - (imgWidth % 4)
+	if blackAndWhite == True:
+		if imgWidth % 32 != 0:
+			imgWidth += 32 - (imgWidth % 32)
+	else:
+		if imgWidth % 4 != 0:
+			imgWidth += 4 - (imgWidth % 4)
 	imgHeight = im.size[1]
 	pixCount = imgWidth * imgHeight
-	dataSize = (imgWidth/4) * imgHeight # We're packing 4 luminance values into a single uint
+	if blackAndWhite == True:
+		dataSize = (imgWidth/32) * imgHeight # We're packing 32 bit values into a single uint
+	else:
+		dataSize = (imgWidth/4) * imgHeight # We're packing 4 luminance values into a single uint
 	shaderSource += "#define IMG%d_WIDTH %d\n#define IMG%d_HEIGHT %d\nuint shaderBuf%d[%d] = uint[](" % (imgId, imgWidth, imgId, im.size[1], imgId, dataSize)
 
 	countItems = 0
 	ABCD = 'A'
+	countTo32 = 0
 	constructedUint32 = 0
 
 	for j in range (0, imgHeight):
@@ -183,25 +191,39 @@ def imageToLumBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0):
 			b = (fetchPix[2]/256.0)
 			luminance = (r * 0.3) + (g * 0.59) + (b * 0.11)
 
-			if ABCD == 'A':
-				constructedUint32 = int (luminance * 255.0) << 24
-				ABCD = 'B'
-			elif ABCD == 'B':
-				constructedUint32 += int (luminance * 255.0) << 16
-				ABCD = 'C'
-			elif ABCD == 'C':
-				constructedUint32 += int (luminance * 255.0) << 8
-				ABCD = 'D'
+			if blackAndWhite == True:
+				if countTo32 == 0:
+					constructedUint32 = 0
+				constructedUint32 += int(1 if luminance > 0.5 else 0) << countTo32
+				countTo32 = (countTo32 + 1) % 32
 			else:
-				constructedUint32 += int (luminance * 255.0)
-				ABCD = 'A'
-
-			if ABCD == 'A':
-				if countItems != pixCount - 1:
-					shaderSource += ("%uu," % constructedUint32)
+				if ABCD == 'A':
+					constructedUint32 = int (luminance * 255.0) << 24
+					ABCD = 'B'
+				elif ABCD == 'B':
+					constructedUint32 += int (luminance * 255.0) << 16
+					ABCD = 'C'
+				elif ABCD == 'C':
+					constructedUint32 += int (luminance * 255.0) << 8
+					ABCD = 'D'
 				else:
-					shaderSource += ("%uu);" % constructedUint32)
-					break
+					constructedUint32 += int (luminance * 255.0)
+					ABCD = 'A'
+
+			if blackAndWhite == True:
+				if countTo32 == 0:
+					if countItems != pixCount - 1:
+						shaderSource += ("%uu," % constructedUint32)
+					else:
+						shaderSource += ("%uu);" % constructedUint32)
+						break
+			else:
+				if ABCD == 'A':
+					if countItems != pixCount - 1:
+						shaderSource += ("%uu," % constructedUint32)
+					else:
+						shaderSource += ("%uu);" % constructedUint32)
+						break
 			countItems += 1
 
 	shaderSource += "\n\nfloat image%dBlit(in vec2 uv)\n{\n" % imgId
@@ -210,21 +232,25 @@ def imageToLumBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0):
 	shaderSource += "	if (uv.y < 0.0 || uv.y > 1.0) return 0.0;\n\n"
 	shaderSource += "	int vi = int ((1.0 - uv.y) * float (IMG%d_HEIGHT));\n" % imgId
 	shaderSource += "	int ui = int (uv.x * float (IMG%d_WIDTH));\n" % imgId
-	shaderSource += "	uint fetchedSample = shaderBuf%d[vi*(IMG%d_WIDTH/4) + (ui/4)];\n" % (imgId, imgId)
-	shaderSource += "	vec4 unpackedColor = unpackVec4 (fetchedSample);\n"
-	shaderSource += "	if (ui % 4 == 0) return unpackedColor.x;\n"
-	shaderSource += "	else if (ui % 4 == 1) return unpackedColor.y;\n"
-	shaderSource += "	else if (ui % 4 == 2) return unpackedColor.z;\n"
-	shaderSource += "	else return unpackedColor.a;\n}\n"
+	shaderSource += "	uint fetchedSample = shaderBuf%d[vi*(IMG%d_WIDTH/%d) + (ui/%d)];\n" % (imgId, imgId, (32 if blackAndWhite == True else 4), (32 if blackAndWhite == True else 4))
+	if blackAndWhite == True:
+		shaderSource += "	return ((fetchedSample & (1u << (ui % 32))) != 0u) ? 1.0 : 0.0;\n}\n"
+	else:
+		shaderSource += "	vec4 unpackedColor = unpackVec4 (fetchedSample);\n"
+		shaderSource += "	if (ui % 4 == 0) return unpackedColor.x;\n"
+		shaderSource += "	else if (ui % 4 == 1) return unpackedColor.y;\n"
+		shaderSource += "	else if (ui % 4 == 2) return unpackedColor.z;\n"
+		shaderSource += "	else return unpackedColor.a;\n}\n"
 
 	return shaderSoFar+"\n"+shaderSource
 
 # Convert all the images...
 
-shader = imageToLumBuffer('angels1.png', [5.100, 8.500], [2.050, 4.60])
-shader = imageToLumBuffer('angels2.png', [4.5, 15.500], [1.71, 4.300], shader, 1)
-shader = imageToLumBuffer('angelshorse.png', [5.0, 5.0], [1.957, 1.750], shader, 2)
-shader = imageToLumBuffer('angels_scroll.png', [2.0, 4.0], [0.5, 2.0], shader, 3)
+#shader = imageToLumBuffer('angels1.png', [5.100, 8.500], [2.050, 4.60])
+#shader = imageToLumBuffer('angels2.png', [4.5, 15.500], [1.71, 4.300], shader, 1)
+#shader = imageToLumBuffer('angelshorse.png', [5.0, 5.0], [1.957, 1.750], shader, 2)
+#shader = imageToLumBuffer('angels_scroll.png', [2.0, 4.0], [0.5, 2.0], shader, 3)
+shader = imageToLumBuffer('psygnosis.png', [1.0, 1.0], [0.0, 0.0], "", 0, True)
 
 file = open('shaderimage.txt', 'w')
 file.write(shader)
@@ -233,7 +259,8 @@ file.close()
 # Convert the sound...
 
 # shader = soundToShaderToy('madworld.mp3', 'madworld.wav', 1220, 1.08, 12.0) # This is for the other shadertoy... ;)
-shader = soundToShaderToy('angels.mp3', 'angels.wav', 2000, 0.8, 7.6)
+# shader = soundToShaderToy('angels.mp3', 'angels.wav', 2000, 0.8, 7.6)
+shader = soundToShaderToy('sotb1.mp3', 'sotb1.wav', 3200, 36.0, 5.1)
 
 file = open("shadersound.txt", "w")
 file.write(shader)
