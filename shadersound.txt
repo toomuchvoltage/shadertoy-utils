@@ -1,13 +1,13 @@
 // Ideally we'd use unpackUnorm4x8(), but this is not available
 vec4 unpackVec4(uint inp)
 {
-	float R = float (inp >> 24) / 256.0;
+	float R = float (inp >> 24) / 255.0;
 	inp &= uint(0x00FFFFFF);
-	float G = float (inp >> 16) / 256.0;
+	float G = float (inp >> 16) / 255.0;
 	inp &= uint(0x0000FFFF);
-	float B = float (inp >> 8) / 256.0;
+	float B = float (inp >> 8) / 255.0;
 	inp &= uint(0x000000FF);
-	float A = float (inp) / 256.0;
+	float A = float (inp) / 255.0;
 	return vec4 (R,G,B,A);
 }
 

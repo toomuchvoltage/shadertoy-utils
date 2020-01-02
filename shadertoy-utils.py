@@ -40,13 +40,13 @@ from PIL import Image
 def writeUnpackVec4():
 	shaderSource =  "// Ideally we'd use unpackUnorm4x8(), but this is not available\n"
 	shaderSource += "vec4 unpackVec4(uint inp)\n{\n"
-	shaderSource += "	float R = float (inp >> 24) / 256.0;\n"
+	shaderSource += "	float R = float (inp >> 24) / 255.0;\n"
 	shaderSource += "	inp &= uint(0x00FFFFFF);\n"
-	shaderSource += "	float G = float (inp >> 16) / 256.0;\n"
+	shaderSource += "	float G = float (inp >> 16) / 255.0;\n"
 	shaderSource += "	inp &= uint(0x0000FFFF);\n"
-	shaderSource += "	float B = float (inp >> 8) / 256.0;\n"
+	shaderSource += "	float B = float (inp >> 8) / 255.0;\n"
 	shaderSource += "	inp &= uint(0x000000FF);\n"
-	shaderSource += "	float A = float (inp) / 256.0;\n"
+	shaderSource += "	float A = float (inp) / 255.0;\n"
 	shaderSource += "	return vec4 (R,G,B,A);\n}\n\n"
 	return shaderSource
 
@@ -147,7 +147,8 @@ def soundToShaderToy(inputMP3, outputWAV, freq, startSecond, lenSeconds, makeFun
 	return shaderSource
 
 wroteUnpackUtility = False
-def imageToLumBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, blackAndWhite = False):
+""" Modes can be "bw", "luma" and "r2g4b2" """
+def imageToLumBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, mode = "luma"):
 
 	global wroteUnpackUtility
 
@@ -160,7 +161,7 @@ def imageToLumBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, 
 	im = Image.open(imgName)
 	pix = im.load()
 	imgWidth = im.size[0]
-	if blackAndWhite == True:
+	if mode == "bw":
 		if imgWidth % 32 != 0:
 			imgWidth += 32 - (imgWidth % 32)
 	else:
@@ -168,10 +169,10 @@ def imageToLumBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, 
 			imgWidth += 4 - (imgWidth % 4)
 	imgHeight = im.size[1]
 	pixCount = imgWidth * imgHeight
-	if blackAndWhite == True:
+	if mode == "bw":
 		dataSize = (imgWidth/32) * imgHeight # We're packing 32 bit values into a single uint
 	else:
-		dataSize = (imgWidth/4) * imgHeight # We're packing 4 luminance values into a single uint
+		dataSize = (imgWidth/4) * imgHeight # We're packing 4 luminance/r2g4b2 values into a single uint
 	shaderSource += "#define IMG%d_WIDTH %d\n#define IMG%d_HEIGHT %d\nuint shaderBuf%d[%d] = uint[](" % (imgId, imgWidth, imgId, im.size[1], imgId, dataSize)
 
 	countItems = 0
@@ -186,31 +187,36 @@ def imageToLumBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, 
 				fetchPix = [0, 0, 0] # Black out where we fall over actual image
 			else:
 				fetchPix = pix[i,j]
-			r = (fetchPix[0]/256.0)
-			g = (fetchPix[1]/256.0)
-			b = (fetchPix[2]/256.0)
-			luminance = (r * 0.3) + (g * 0.59) + (b * 0.11)
-
-			if blackAndWhite == True:
+			luminance = 0.0
+			r = (fetchPix[0]/255.0)
+			g = (fetchPix[1]/255.0)
+			b = (fetchPix[2]/255.0)
+			if mode == "luma" or mode == "bw":
+				luminance = r * 0.3 + g * 0.59 + b * 0.11
+				pixVal = int (luminance * 255.0)
+			else:
+				pixVal = int (round(r * 3.0)) + (int(round(g * 15.0)) << 2) + (int(round(b * 3.0)) << 6);
+				
+			if mode == "bw":
 				if countTo32 == 0:
 					constructedUint32 = 0
 				constructedUint32 += int(1 if luminance > 0.5 else 0) << countTo32
 				countTo32 = (countTo32 + 1) % 32
 			else:
 				if ABCD == 'A':
-					constructedUint32 = int (luminance * 255.0) << 24
+					constructedUint32 = pixVal << 24
 					ABCD = 'B'
 				elif ABCD == 'B':
-					constructedUint32 += int (luminance * 255.0) << 16
+					constructedUint32 += pixVal << 16
 					ABCD = 'C'
 				elif ABCD == 'C':
-					constructedUint32 += int (luminance * 255.0) << 8
+					constructedUint32 += pixVal << 8
 					ABCD = 'D'
 				else:
-					constructedUint32 += int (luminance * 255.0)
+					constructedUint32 += pixVal
 					ABCD = 'A'
 
-			if blackAndWhite == True:
+			if mode == "bw":
 				if countTo32 == 0:
 					if countItems != pixCount - 1:
 						shaderSource += ("%uu," % constructedUint32)
@@ -226,21 +232,36 @@ def imageToLumBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, 
 						break
 			countItems += 1
 
-	shaderSource += "\n\nfloat image%dBlit(in vec2 uv)\n{\n" % imgId
+	if mode == "r2g4b2":
+		shaderSource += "\n\nvec4 image%dBlit(in vec2 uv)\n{\n" % imgId
+	else:
+		shaderSource += "\n\nfloat image%dBlit(in vec2 uv)\n{\n" % imgId
 	shaderSource += "	uv = uv * vec2 (%.3f, %.3f) - vec2 (%.3f, %.3f);\n\n" % (imgScale[0], imgScale[1], imgOffset[0], imgOffset[1])
-	shaderSource += "	if (uv.x < 0.0 || uv.x > 1.0) return 0.0;\n"
-	shaderSource += "	if (uv.y < 0.0 || uv.y > 1.0) return 0.0;\n\n"
+	if mode == "r2g4b2":
+		shaderSource += "	if (uv.x < 0.0 || uv.x > 1.0) return vec4(0.0);\n"
+		shaderSource += "	if (uv.y < 0.0 || uv.y > 1.0) return vec4(0.0);\n\n"
+	else:
+		shaderSource += "	if (uv.x < 0.0 || uv.x > 1.0) return 0.0;\n"
+		shaderSource += "	if (uv.y < 0.0 || uv.y > 1.0) return 0.0;\n\n"
 	shaderSource += "	int vi = int ((1.0 - uv.y) * float (IMG%d_HEIGHT));\n" % imgId
 	shaderSource += "	int ui = int (uv.x * float (IMG%d_WIDTH));\n" % imgId
-	shaderSource += "	uint fetchedSample = shaderBuf%d[vi*(IMG%d_WIDTH/%d) + (ui/%d)];\n" % (imgId, imgId, (32 if blackAndWhite == True else 4), (32 if blackAndWhite == True else 4))
-	if blackAndWhite == True:
+	shaderSource += "	uint fetchedSample = shaderBuf%d[vi*(IMG%d_WIDTH/%d) + (ui/%d)];\n" % (imgId, imgId, (32 if mode == "bw" else 4), (32 if mode == "bw" else 4))
+	if mode == "bw":
 		shaderSource += "	return ((fetchedSample & (1u << (ui % 32))) != 0u) ? 1.0 : 0.0;\n}\n"
-	else:
+	elif mode == "luma":
 		shaderSource += "	vec4 unpackedColor = unpackVec4 (fetchedSample);\n"
 		shaderSource += "	if (ui % 4 == 0) return unpackedColor.x;\n"
 		shaderSource += "	else if (ui % 4 == 1) return unpackedColor.y;\n"
 		shaderSource += "	else if (ui % 4 == 2) return unpackedColor.z;\n"
 		shaderSource += "	else return unpackedColor.a;\n}\n"
+	else:
+		shaderSource += "	vec4 unpacked4Pixels = unpackVec4 (fetchedSample);\n"
+		shaderSource += "	uint pixVal;\n"
+		shaderSource += "	if (ui % 4 == 0) pixVal = uint (unpacked4Pixels.x * 255.0);\n"
+		shaderSource += "	else if (ui % 4 == 1) pixVal = uint (unpacked4Pixels.y * 255.0);\n"
+		shaderSource += "	else if (ui % 4 == 2) pixVal = uint (unpacked4Pixels.z * 255.0);\n"
+		shaderSource += "	else pixVal = uint (unpacked4Pixels.a * 255.0);\n"
+		shaderSource += "	return vec4 (float (pixVal & 3u) * 0.333333, float ((pixVal & 60u) >> 2) * 0.06666667, float ((pixVal & 192u) >> 6) * 0.333333, 1.0);\n}\n"
 
 	return shaderSoFar+"\n"+shaderSource
 
@@ -250,7 +271,8 @@ def imageToLumBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, 
 #shader = imageToLumBuffer('angels2.png', [4.5, 15.500], [1.71, 4.300], shader, 1)
 #shader = imageToLumBuffer('angelshorse.png', [5.0, 5.0], [1.957, 1.750], shader, 2)
 #shader = imageToLumBuffer('angels_scroll.png', [2.0, 4.0], [0.5, 2.0], shader, 3)
-shader = imageToLumBuffer('psygnosis.png', [1.0, 1.0], [0.0, 0.0], "", 0, True)
+shader = imageToLumBuffer('graffiti.png', [1.0, 1.0], [0.0, 0.0], "", 0, "r2g4b2")
+shader = imageToLumBuffer('graffiti_lowres.png', [1.0, 1.0], [0.0, 0.0], shader, 1, "r2g4b2")
 
 file = open('shaderimage.txt', 'w')
 file.write(shader)
