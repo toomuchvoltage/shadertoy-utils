@@ -148,7 +148,7 @@ def soundToShaderToy(inputMP3, outputWAV, freq, startSecond, lenSeconds, makeFun
 
 wroteUnpackUtility = False
 """ Modes can be "bw", "luma" and "r2g4b2" """
-def imageToLumBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, mode = "luma"):
+def imageToBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, mode = "luma"):
 
 	global wroteUnpackUtility
 
@@ -264,15 +264,58 @@ def imageToLumBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, 
 		shaderSource += "	return vec4 (float (pixVal & 3u) * 0.333333, float ((pixVal & 60u) >> 2) * 0.06666667, float ((pixVal & 192u) >> 6) * 0.333333, 1.0);\n}\n"
 
 	return shaderSoFar+"\n"+shaderSource
+	
+def textToBuffer(textContent, shaderSoFar = "", textId = 0):
+	shaderSource = shaderSoFar
+	msg = textContent
+	needsSpace = len(msg) % 4
+	if needsSpace != 0:
+		msg += " " * (4 - needsSpace)
+
+	shaderSource += "\nconst uint textArr%d[%d] = uint[](" % (textId, len(msg) / 4)
+	for i in range (0, len(msg) // 4):
+		curWordIndex = i * 4
+		curWordThing = 0
+		curWordThing |= ord(msg[curWordIndex]) % 16 + ((15 - ord(msg[curWordIndex]) // 16) << 4)
+		curWordIndex += 1
+		curWordThing |= (ord(msg[curWordIndex]) % 16 + ((15 - ord(msg[curWordIndex]) // 16) << 4)) << 8
+		curWordIndex += 1
+		curWordThing |= (ord(msg[curWordIndex]) % 16 + ((15 - ord(msg[curWordIndex]) // 16) << 4)) << 16
+		curWordIndex += 1
+		curWordThing |= (ord(msg[curWordIndex]) % 16 + ((15 - ord(msg[curWordIndex]) // 16) << 4)) << 24
+		if i == (len(msg) // 4) - 1:
+			shaderSource += "%uu);\n" % (curWordThing)
+		else:
+			shaderSource += "%uu," % (curWordThing)
+			
+	shaderSource += "// Otavio Good's sampler for Shadertoy fonts\nvec4 SampleFontTex%d(vec2 uv)\n" % (textId)
+	shaderSource += "{\n"
+	shaderSource += "	vec2 fl = floor(uv + 0.5);\n"
+	shaderSource += "	if (fl.y == 0.0) {\n"
+	shaderSource += "		int charIndex = int(fl.x + 3.0);\n"
+	shaderSource += "		int arrIndex = (charIndex / 4) %% %d;\n" % (len(msg) // 4)
+	shaderSource += "		uint wordFetch = textArr%d[arrIndex];\n" % (textId)
+	shaderSource += "		uint charFetch = (wordFetch >> ((charIndex % 4) * 8)) & 0x000000FFu;\n"
+	shaderSource += "		float charX = float (int (charFetch & 0x0000000Fu)     );\n"
+	shaderSource += "		float charY = float (int (charFetch & 0x000000F0u) >> 4);\n"
+	shaderSource += "		fl = vec2(charX, charY);\n"
+	shaderSource += "	}\n"
+	shaderSource += "	uv = fl + fract(uv+0.5)-0.5;\n"
+	shaderSource += "	return texture(iChannel2, (uv+0.5)*(1.0/16.0), -100.0) + vec4(0.0, 0.0, 0.0, 0.000000001) - 0.5;\n"
+	shaderSource += "}\n"
+
+	return shaderSource
+
 
 # Convert all the images...
 
-#shader = imageToLumBuffer('angels1.png', [5.100, 8.500], [2.050, 4.60])
-#shader = imageToLumBuffer('angels2.png', [4.5, 15.500], [1.71, 4.300], shader, 1)
-#shader = imageToLumBuffer('angelshorse.png', [5.0, 5.0], [1.957, 1.750], shader, 2)
-#shader = imageToLumBuffer('angels_scroll.png', [2.0, 4.0], [0.5, 2.0], shader, 3)
-shader = imageToLumBuffer('graffiti.png', [1.0, 1.0], [0.0, 0.0], "", 0, "r2g4b2")
-shader = imageToLumBuffer('graffiti_lowres.png', [1.0, 1.0], [0.0, 0.0], shader, 1, "r2g4b2")
+#shader = imageToBuffer('angels1.png', [5.100, 8.500], [2.050, 4.60])
+#shader = imageToBuffer('angels2.png', [4.5, 15.500], [1.71, 4.300], shader, 1)
+#shader = imageToBuffer('angelshorse.png', [5.0, 5.0], [1.957, 1.750], shader, 2)
+#shader = imageToBuffer('angels_scroll.png', [2.0, 4.0], [0.5, 2.0], shader, 3)
+shader = imageToBuffer('graffiti.png', [1.0, 1.0], [0.0, 0.0], "", 0, "r2g4b2")
+shader = imageToBuffer('graffiti_lowres.png', [1.0, 1.0], [0.0, 0.0], shader, 1, "r2g4b2")
+shader = textToBuffer("Yo dude!", shader)
 
 file = open('shaderimage.txt', 'w')
 file.write(shader)
