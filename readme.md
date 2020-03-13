@@ -1,6 +1,6 @@
 # Shadertoy Utils!
 
-These utilities can turn images, sounds and text into packed various buffers for consumption in GLSL... along with the code necessary to reproduce them in Shadertoy!
+These utilities can turn images, sounds and text into packed buffers for consumption in GLSL... along with the code necessary to reproduce them in Shadertoy!
 
 # Pre-requisites
 
