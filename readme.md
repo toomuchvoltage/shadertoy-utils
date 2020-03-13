@@ -1,6 +1,6 @@
 # Shadertoy Utils!
 
-These utilities can turn images and sounds into packed grayscale/luminance and 8bit PCM buffers... along with the code necessary to reproduce them in Shadertoy!
+These utilities can turn images, sounds and text into packed various buffers for consumption in GLSL... along with the code necessary to reproduce them in Shadertoy!
 
 # Pre-requisites
 
@@ -22,28 +22,31 @@ or where ever ffmpeg is.
 
 ## Images
 
-This is the code I used to convert all the images for the [Angels cracktro](https://www.shadertoy.com/view/WljSR1):
+The following code turns an image to a consumable buffer:
 
-    shader = imageToLumBuffer('angels1.png', [5.100, 8.500], [2.050, 4.60])
-    shader = imageToLumBuffer('angels2.png', [4.5, 15.500], [1.71, 4.300], shader, 1)
-    shader = imageToLumBuffer('angelshorse.png', [5.0, 5.0], [1.957, 1.750], shader, 2)
-    shader = imageToLumBuffer('angels_scroll.png', [2.0, 4.0], [0.5, 2.0], shader, 3)
+    shader = imageToBuffer('graffiti_lowres.png', [1.0, 1.0], [0.0, 0.0], shader, 1, "r2g4b2")
 
     file = open('shaderimage.txt', 'w')
     file.write(shader)
     file.close()
 
-First parameter to `imageToLumBuffer()` is the filename. The second parameter is xy scale and the third parameter is the xy offset. The generated function will take those into account and return zero outside of those bounds to make your life easier... and so that you don't have to remember what works in your scenario for every particular image. If you wanna handle that yourself just use `[1.0, 1.0]` and `[0.0, 0.0]`.
+First parameter to `imageToBuffer()` is the filename. The second parameter is xy scale and the third parameter is the xy offset. The generated function will take those into account and return zero outside of those bounds to make your life easier... and so that you don't have to remember what works in your scenario for every particular image. If you wanna handle that yourself just use `[1.0, 1.0]` and `[0.0, 0.0]`.
 
 Fourth parameter allows you to concatenate previously generated code with this one so that you can use all of your images in the same shader.
 
 Fifth parameter is for images generated after the first one since they need their own unique IDs. Again, it's just for convenience so you don't have to manually change function/variable names.
 
-Your images cannot in total (for one Shadertoy) use up more than 4096 uniforms (4096 * 4 pixels). Choose your resolutions wisely :)
+Sixth parameter is one of the following:
+
+* **"bw"**: Every packed bit is either a black or a white value
+* **"luma"**: Every packed byte is a grayscale value indicating brightness
+* **"r2g4b2"**: Every byte packs trichromatic color information in r2g4b2 format
+
+Your buffers cannot in total (for one Shadertoy) use up more than 4096 uniforms. Choose your resolutions wisely :)
 
 ## Sounds
 
-This is again the code used for the above cracktro.
+This is the code used for the angels cracktro.
 
     shader = soundToShaderToy('angels.mp3', 'angels.wav', 2000, 0.8, 7.6)
 
@@ -57,6 +60,8 @@ Third parameter is the final frequency. Some audio (e.g. low frequency chiptunes
 
 The fourth and fifth parameters are start position and length of the audio clip you're choosing inside the original track.
 
+The sixth parameter optionally creates a switch/case function instead of reading from the buffer. This may break compilation.
+
 As with the images, you're still bound by 4096 uniforms with each packing 4 8bit samples. How much length vs. frequency you want to pack in there is up to you. You'll have to get creative with the clip you want to include and how much frequency you'll need to reproduce it faithfully :)
 
 ### Sampling frequency vs. sample precision
@@ -64,6 +69,20 @@ As with the images, you're still bound by 4096 uniforms with each packing 4 8bit
 Generally speaking, going from 16bit PCM to 8bit PCM isn't as detrimental as going from 44KHz to 8KHz, 2KHz or 1KHz. Funny how that works, eh? The more faithful the vibrations of the speaker diaphragm the better the reproduction.
 
 For comparison, check out `madworld_8bit_highfreq.mp3` (which is 8bit PCM -- created with Audacity -- at 44KHz) with `madworld.wav` (which -- by default -- is 16bit PCM at 1.2KHz). While `madworld_8bit_highfreq.mp3` has a bit of static, the piano sounds WAY better than the same tune at 1.2KHz with higher precision samples.
+
+## Text
+
+This code will turn the given text into a fontmap sampler for otaviogood's fontmap:
+
+	textToBuffer("Yo dude!", shader, 0)
+
+See [here](https://www.shadertoy.com/view/llcXRl) on how to use the fontmap sampler to render SDF text.
+
+First parameter is the text to be encoded.
+
+Second parameter is previous shader code.
+
+Third parameter is the text ID in case of multiple text samplers.
 
 # Known issues
 
