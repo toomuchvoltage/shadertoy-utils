@@ -138,11 +138,7 @@ def soundToShaderToy(inputMP3, outputWAV, freq, startSecond, lenSeconds, makeFun
 		shaderSource += "	uint packedSample = getSample(curTime/4);\n"
 	else:
 		shaderSource += "	uint packedSample = shaderBuf[curTime/4];\n"
-	shaderSource += "	vec4 unpackedSound = unpackVec4 (packedSample);\n"
-	shaderSource += "	if (curTime % 4 == 0) return vec2 (unpackedSound.x * 2.0 - 1.0);\n"
-	shaderSource += "	else if (curTime % 4 == 1) return vec2 (unpackedSound.y * 2.0 - 1.0);\n"
-	shaderSource += "	else if (curTime % 4 == 2) return vec2 (unpackedSound.z * 2.0 - 1.0);\n"
-	shaderSource += "	else return vec2 (unpackedSound.a * 2.0 - 1.0);\n}\n"
+	shaderSource += "	return vec2 (unpackVec4 (packedSample)[curTime & 3] * 2.0 - 1.0);\n}\n"
 	
 	return shaderSource
 
@@ -249,18 +245,9 @@ def imageToBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, mod
 	if mode == "bw":
 		shaderSource += "	return ((fetchedSample & (1u << (ui % 32))) != 0u) ? 1.0 : 0.0;\n}\n"
 	elif mode == "luma":
-		shaderSource += "	vec4 unpackedColor = unpackVec4 (fetchedSample);\n"
-		shaderSource += "	if (ui % 4 == 0) return unpackedColor.x;\n"
-		shaderSource += "	else if (ui % 4 == 1) return unpackedColor.y;\n"
-		shaderSource += "	else if (ui % 4 == 2) return unpackedColor.z;\n"
-		shaderSource += "	else return unpackedColor.a;\n}\n"
+		shaderSource += "	return unpackVec4 (fetchedSample)[ui & 3];\n}\n"
 	else:
-		shaderSource += "	vec4 unpacked4Pixels = unpackVec4 (fetchedSample);\n"
-		shaderSource += "	uint pixVal;\n"
-		shaderSource += "	if (ui % 4 == 0) pixVal = uint (unpacked4Pixels.x * 255.0);\n"
-		shaderSource += "	else if (ui % 4 == 1) pixVal = uint (unpacked4Pixels.y * 255.0);\n"
-		shaderSource += "	else if (ui % 4 == 2) pixVal = uint (unpacked4Pixels.z * 255.0);\n"
-		shaderSource += "	else pixVal = uint (unpacked4Pixels.a * 255.0);\n"
+		shaderSource += "	uint pixVal = uint(unpackVec4 (fetchedSample)[ui & 3] * 255.0);\n"
 		shaderSource += "	return vec4 (float (pixVal & 3u) * 0.333333, float ((pixVal & 60u) >> 2) * 0.06666667, float ((pixVal & 192u) >> 6) * 0.333333, 1.0);\n}\n"
 
 	return shaderSoFar+"\n"+shaderSource
@@ -313,8 +300,8 @@ def textToBuffer(textContent, shaderSoFar = "", textId = 0):
 #shader = imageToBuffer('angels2.png', [4.5, 15.500], [1.71, 4.300], shader, 1)
 #shader = imageToBuffer('angelshorse.png', [5.0, 5.0], [1.957, 1.750], shader, 2)
 #shader = imageToBuffer('angels_scroll.png', [2.0, 4.0], [0.5, 2.0], shader, 3)
-shader = imageToBuffer('graffiti.png', [1.0, 1.0], [0.0, 0.0], "", 0, "r2g4b2")
-shader = imageToBuffer('graffiti_lowres.png', [1.0, 1.0], [0.0, 0.0], shader, 1, "r2g4b2")
+shader = imageToBuffer('graffiti.png', [1.0, 1.0], [0.0, 0.0], "", 0, "luma")
+shader = imageToBuffer('graffiti_lowres.png', [1.0, 1.0], [0.0, 0.0], shader, 1, "luma")
 shader = textToBuffer("Yo dude!", shader)
 
 file = open('shaderimage.txt', 'w')

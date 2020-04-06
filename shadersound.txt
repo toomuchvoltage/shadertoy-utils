@@ -17,9 +17,5 @@ vec2 mainSound( float time )
 {
 	int curTime = int(time*3200.0) % 16320;
 	uint packedSample = shaderBuf[curTime/4];
-	vec4 unpackedSound = unpackVec4 (packedSample);
-	if (curTime % 4 == 0) return vec2 (unpackedSound.x * 2.0 - 1.0);
-	else if (curTime % 4 == 1) return vec2 (unpackedSound.y * 2.0 - 1.0);
-	else if (curTime % 4 == 2) return vec2 (unpackedSound.z * 2.0 - 1.0);
-	else return vec2 (unpackedSound.a * 2.0 - 1.0);
+	return vec2 (unpackVec4 (packedSample)[curTime & 3] * 2.0 - 1.0);
 }
