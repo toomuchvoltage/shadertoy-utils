@@ -24,7 +24,7 @@ or where ever ffmpeg is.
 
 The following code turns an image to a consumable buffer:
 
-    shader = imageToBuffer('graffiti_lowres.png', [1.0, 1.0], [0.0, 0.0], shader, 1, "r2g4b2")
+    shader = imageToBuffer('graffiti_lowres.png', [1.0, 1.0], [0.0, 0.0], shader, 1, "r2g4b2", "bilinear")
 
     file = open('shaderimage.txt', 'w')
     file.write(shader)
@@ -41,6 +41,11 @@ Sixth parameter is one of the following:
 * **"bw"**: Every packed bit is either a black or a white value
 * **"luma"**: Every packed byte is a grayscale value indicating brightness
 * **"r2g4b2"**: Every byte packs trichromatic color information in r2g4b2 format
+
+Seventh parameter is the filtering mode and one of the following is supported:
+
+* **"nearest"**: Nearest neighbor filtering
+* **"bilinear"**: Bilinear filtering
 
 Your buffers cannot in total (for one Shadertoy) use up more than 4096 uniforms. Choose your resolutions wisely :)
 

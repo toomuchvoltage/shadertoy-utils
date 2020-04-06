@@ -144,7 +144,8 @@ def soundToShaderToy(inputMP3, outputWAV, freq, startSecond, lenSeconds, makeFun
 
 wroteUnpackUtility = False
 """ Modes can be "bw", "luma" and "r2g4b2" """
-def imageToBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, mode = "luma"):
+""" Filter can be "nearest" and "bilinear" """
+def imageToBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, mode = "luma", filter = "nearest"):
 
 	global wroteUnpackUtility
 
@@ -239,16 +240,50 @@ def imageToBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, mod
 	else:
 		shaderSource += "	if (uv.x < 0.0 || uv.x > 1.0) return 0.0;\n"
 		shaderSource += "	if (uv.y < 0.0 || uv.y > 1.0) return 0.0;\n\n"
-	shaderSource += "	int vi = int ((1.0 - uv.y) * float (IMG%d_HEIGHT));\n" % imgId
-	shaderSource += "	int ui = int (uv.x * float (IMG%d_WIDTH));\n" % imgId
-	shaderSource += "	uint fetchedSample = shaderBuf%d[vi*(IMG%d_WIDTH/%d) + (ui/%d)];\n" % (imgId, imgId, (32 if mode == "bw" else 4), (32 if mode == "bw" else 4))
-	if mode == "bw":
-		shaderSource += "	return ((fetchedSample & (1u << (ui % 32))) != 0u) ? 1.0 : 0.0;\n}\n"
-	elif mode == "luma":
-		shaderSource += "	return unpackVec4 (fetchedSample)[ui & 3];\n}\n"
+	if filter == "nearest":
+		shaderSource += "	int vi = int ((1.0 - uv.y) * float (IMG%d_HEIGHT));\n" % imgId
+		shaderSource += "	int ui = int (uv.x * float (IMG%d_WIDTH));\n" % imgId
+		shaderSource += "	uint fetchedSample = shaderBuf%d[vi*(IMG%d_WIDTH/%d) + (ui/%d)];\n" % (imgId, imgId, (32 if mode == "bw" else 4), (32 if mode == "bw" else 4))
+		if mode == "bw":
+			shaderSource += "	return ((fetchedSample & (1u << (ui % 32))) != 0u) ? 1.0 : 0.0;\n}\n"
+		elif mode == "luma":
+			shaderSource += "	return unpackVec4 (fetchedSample)[ui & 3];\n}\n"
+		else:
+			shaderSource += "	uint pixVal = uint(unpackVec4 (fetchedSample)[ui & 3] * 255.0);\n"
+			shaderSource += "	return vec4 (float (pixVal & 3u) * 0.333333, float ((pixVal & 60u) >> 2) * 0.06666667, float ((pixVal & 192u) >> 6) * 0.333333, 1.0);\n}\n"
 	else:
-		shaderSource += "	uint pixVal = uint(unpackVec4 (fetchedSample)[ui & 3] * 255.0);\n"
-		shaderSource += "	return vec4 (float (pixVal & 3u) * 0.333333, float ((pixVal & 60u) >> 2) * 0.06666667, float ((pixVal & 192u) >> 6) * 0.333333, 1.0);\n}\n"
+		shaderSource += "	float vunorm = (1.0 - uv.y) * float (IMG%d_HEIGHT);\n" % imgId
+		shaderSource += "	float uunorm = uv.x * float (IMG%d_WIDTH);\n" % imgId
+		shaderSource += "	int vi = int (vunorm);\n"
+		shaderSource += "	int ui = int (uunorm);\n"
+		shaderSource += "	float vfract = fract (vunorm);\n"
+		shaderSource += "	float ufract = fract (uunorm);\n"
+		shaderSource += "	int ui_1 = min (ui + 1,IMG%d_WIDTH - 1);\n" % imgId
+		shaderSource += "	int vi_1 = min (vi + 1,IMG%d_HEIGHT - 1);\n" % imgId
+		shaderSource += "	uint fetchedSample00 = shaderBuf%d[vi*(IMG%d_WIDTH/%d) + (ui/%d)];\n" % (imgId, imgId, (32 if mode == "bw" else 4), (32 if mode == "bw" else 4))
+		shaderSource += "	uint pixVal00 = uint(unpackVec4 (fetchedSample00)[ui & 3] * 255.0);\n"
+		shaderSource += "	uint fetchedSample01 = shaderBuf%d[vi*(IMG%d_WIDTH/%d) + (ui_1/%d)];\n" % (imgId, imgId, (32 if mode == "bw" else 4), (32 if mode == "bw" else 4))
+		shaderSource += "	uint pixVal01 = uint(unpackVec4 (fetchedSample01)[ui_1 & 3] * 255.0);\n"
+		shaderSource += "	uint fetchedSample10 = shaderBuf%d[vi_1*(IMG%d_WIDTH/%d) + (ui/%d)];\n" % (imgId, imgId, (32 if mode == "bw" else 4), (32 if mode == "bw" else 4))
+		shaderSource += "	uint pixVal10 = uint(unpackVec4 (fetchedSample10)[ui & 3] * 255.0);\n"
+		shaderSource += "	uint fetchedSample11 = shaderBuf%d[vi_1*(IMG%d_WIDTH/%d) + (ui_1/%d)];\n" % (imgId, imgId, (32 if mode == "bw" else 4), (32 if mode == "bw" else 4))
+		shaderSource += "	uint pixVal11 = uint(unpackVec4 (fetchedSample11)[ui_1 & 3] * 255.0);\n"
+		if mode == "bw":
+			shaderSource += "	float col00 = ((fetchedSample00 & (1u << (ui % 32))) != 0u) ? 1.0 : 0.0;\n"
+			shaderSource += "	float col01 = ((fetchedSample01 & (1u << (ui_1 % 32))) != 0u) ? 1.0 : 0.0;\n"
+			shaderSource += "	float col10 = ((fetchedSample10 & (1u << (ui % 32))) != 0u) ? 1.0 : 0.0;\n"
+			shaderSource += "	float col11 = ((fetchedSample11 & (1u << (ui_1 % 32))) != 0u) ? 1.0 : 0.0;\n"
+		elif mode == "luma":
+			shaderSource += "	float col00 = unpackVec4 (fetchedSample00)[ui & 3];\n"
+			shaderSource += "	float col01 = unpackVec4 (fetchedSample01)[ui_1 & 3];\n"
+			shaderSource += "	float col10 = unpackVec4 (fetchedSample10)[ui & 3];\n"
+			shaderSource += "	float col11 = unpackVec4 (fetchedSample11)[ui_1 & 3];\n"
+		else:
+			shaderSource += "	vec4 col00 = vec4 (float (pixVal00 & 3u) * 0.333333, float ((pixVal00 & 60u) >> 2) * 0.06666667, float ((pixVal00 & 192u) >> 6) * 0.333333, 1.0);\n"
+			shaderSource += "	vec4 col01 = vec4 (float (pixVal01 & 3u) * 0.333333, float ((pixVal01 & 60u) >> 2) * 0.06666667, float ((pixVal01 & 192u) >> 6) * 0.333333, 1.0);\n"
+			shaderSource += "	vec4 col10 = vec4 (float (pixVal10 & 3u) * 0.333333, float ((pixVal10 & 60u) >> 2) * 0.06666667, float ((pixVal10 & 192u) >> 6) * 0.333333, 1.0);\n"
+			shaderSource += "	vec4 col11 = vec4 (float (pixVal11 & 3u) * 0.333333, float ((pixVal11 & 60u) >> 2) * 0.06666667, float ((pixVal11 & 192u) >> 6) * 0.333333, 1.0);\n"
+		shaderSource += "	return mix (mix(col00, col01, ufract), mix(col10, col11, ufract), vfract);\n}\n"
 
 	return shaderSoFar+"\n"+shaderSource
 	
@@ -300,8 +335,8 @@ def textToBuffer(textContent, shaderSoFar = "", textId = 0):
 #shader = imageToBuffer('angels2.png', [4.5, 15.500], [1.71, 4.300], shader, 1)
 #shader = imageToBuffer('angelshorse.png', [5.0, 5.0], [1.957, 1.750], shader, 2)
 #shader = imageToBuffer('angels_scroll.png', [2.0, 4.0], [0.5, 2.0], shader, 3)
-shader = imageToBuffer('graffiti.png', [1.0, 1.0], [0.0, 0.0], "", 0, "luma")
-shader = imageToBuffer('graffiti_lowres.png', [1.0, 1.0], [0.0, 0.0], shader, 1, "luma")
+shader = imageToBuffer('graffiti.png', [1.0, 1.0], [0.0, 0.0], "", 0, "r2g4b2", "nearest")
+shader = imageToBuffer('graffiti_lowres.png', [1.0, 1.0], [0.0, 0.0], shader, 1, "r2g4b2", "nearest")
 shader = textToBuffer("Yo dude!", shader)
 
 file = open('shaderimage.txt', 'w')
