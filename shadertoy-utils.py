@@ -1,7 +1,7 @@
 """
    Covered under the MIT license:
 
-   Copyright (c) 2019 TooMuchVoltage Software Inc.
+   Copyright (c) 2023 TooMuchVoltage Software Inc.
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -35,6 +35,7 @@ import math
 import subprocess
 from scipy.io import wavfile as wav
 from PIL import Image
+from plyfile import PlyData, PlyElement
 
 """   Unpack util   """
 def writeUnpackVec4():
@@ -286,7 +287,282 @@ def imageToBuffer(imgName, imgScale, imgOffset, shaderSoFar = "", imgId = 0, mod
 		shaderSource += "	return mix (mix(col00, col01, ufract), mix(col10, col11, ufract), vfract);\n}\n"
 
 	return shaderSoFar+"\n"+shaderSource
-	
+
+class bitArray:
+	def __init__(self):
+		self.outpArray = bytearray()
+		self.outpByte = 0
+		self.writtenBits = 0
+
+	def append(self, bits, bitRange):
+		if bitRange < (8 - self.writtenBits):
+			bits <<= ((8 - self.writtenBits) - bitRange)
+			self.outpByte |= bits
+			self.writtenBits += bitRange
+		else:
+			topBitShift = (bitRange - (8 - self.writtenBits))
+			bitsTop = (bits >> topBitShift)
+			self.outpByte |= bitsTop
+			self.outpArray += self.outpByte.to_bytes(1)
+			self.outpByte = 0
+			self.writtenBits = 0
+			if topBitShift == 0:
+				return
+			bitsBottom = ((bits & (0xFF >> (8 - topBitShift))) << (8 - topBitShift))
+			self.outpByte = bitsBottom
+			self.writtenBits = topBitShift
+
+	def report(self):
+		if self.writtenBits == 0:
+			return self.outpArray
+		else:
+			return self.outpArray + self.outpByte.to_bytes(1)
+
+	def reportHexArray(self, itemType, itemNum = 0):
+		outputBytes = self.report()
+		if len(outputBytes) % 4 != 0:
+			for i in range (0, 4 - (len(outputBytes) % 4)):
+				outputBytes += (0).to_bytes(1)
+		numInts = int (len(outputBytes) / 4)
+		shaderUniforms = "\nuint %s%d[%d] = uint[](" % (itemType, itemNum, numInts)
+		for i in range (0, numInts):
+			curInt = (outputBytes[i * 4] << 24) + (outputBytes[i * 4 + 1] << 16) + (outputBytes[i * 4 + 2] << 8) + outputBytes[i * 4 + 3]
+			if i == numInts - 1:
+				shaderUniforms += ("%uu);" % (curInt))
+			else:
+				shaderUniforms += ("%uu," % (curInt))
+		return shaderUniforms
+
+"""   Unpack util   """
+def writeSVOUnpackUtils(shaderSource):
+	unpackUtils = """
+bool rayBoxIntersectTime (vec3 l1,vec3 invm,vec3 bmin,vec3 bmax, out float tMin, out float tMax)
+{
+	vec3 bmin_l1 = (bmin - l1)*invm;
+	vec3 bmax_l1 = (bmax - l1)*invm;
+	vec3 minVec = min (bmin_l1, bmax_l1);
+	vec3 maxVec = max (bmin_l1, bmax_l1);
+
+	float tmin = max(max(minVec.x, minVec.y), minVec.z);
+	float tmax = min(min(maxVec.x, maxVec.y), maxVec.z);
+
+	bool retVal = ((tmax >= tmin) && (tmin < 1.0) && (tmax > 0.0));
+	tMin = tmin;
+	tMax = tmax;
+	return retVal;
+}
+
+uint countSetBits(uint n)
+{
+	uint count = 0u;
+	while (n != 0u) {
+		count += (n & 1u);
+		n >>= 1u;
+	}
+	return count;
+}
+
+uint countSetBitsBefore(uint n, uint comp)
+{
+	uint count = 0u;
+	uint leadingBit = 0x80u;
+	while (n != 0u) {
+		if ( leadingBit == comp ) return count;
+		if ((n & 0x80u) != 0u) count++;
+		n <<= 1u;
+		leadingBit >>= 1u;
+	}
+	return count;
+}
+"""
+	return shaderSource + unpackUtils
+
+wroteSVOUnpackUtility = False
+""" BitStream SVO Compression with Morton Sorted Bricks """
+def SVOToBitstream(plyFileName = "", shaderSoFar = "", svoNum = 0):
+	global wroteSVOUnpackUtility
+	shaderSource = ""
+	shaderSource += shaderSoFar
+	if wroteSVOUnpackUtility == False:
+		shaderSource = writeSVOUnpackUtils(shaderSource)
+		wroteSVOUnpackUtility = True
+
+	voxXRange = 10
+	voxYRange = 10
+	voxZRange = 10
+
+	pointDB = [[[[]for k in range(voxXRange * 4)] for j in range(voxYRange * 4)] for i in range(voxZRange * 4)]
+	pointDBMin = []
+	pointDBMax = []
+	firstTime = True
+	plydata = PlyData.read(plyFileName)
+	for i in range (0, len(plydata['vertex'])):
+		curPoint = [plydata['vertex'][i]['x'], plydata['vertex'][i]['y'], plydata['vertex'][i]['z']]
+		if firstTime == True:
+			pointDBMin = [curPoint[0], curPoint[1], curPoint[2]]
+			pointDBMax = [curPoint[0], curPoint[1], curPoint[2]]
+			firstTime = False
+		else:
+			pointDBMin = [min (curPoint[0], pointDBMin[0]), min (curPoint[1], pointDBMin[1]), min (curPoint[2], pointDBMin[2])]
+			pointDBMax = [max (curPoint[0], pointDBMax[0]), max (curPoint[1], pointDBMax[1]), max (curPoint[2], pointDBMax[2])]
+			
+	pointDBRange = [pointDBMax[0] - pointDBMin[0], pointDBMax[1] - pointDBMin[1], pointDBMax[2] - pointDBMin[2]]
+	for i in range (0, len(plydata['vertex'])):
+		curPoint = [plydata['vertex'][i]['x'], plydata['vertex'][i]['y'], plydata['vertex'][i]['z']]
+		pointDBXCoord = int (((curPoint[0] - pointDBMin[0]) / pointDBRange[0]) * 0.999999 * voxXRange * 4)
+		pointDBYCoord = int (((curPoint[1] - pointDBMin[1]) / pointDBRange[1]) * 0.999999 * voxYRange * 4)
+		pointDBZCoord = int (((curPoint[2] - pointDBMin[2]) / pointDBRange[2]) * 0.999999 * voxZRange * 4)
+		pointDB[pointDBXCoord][pointDBYCoord][pointDBZCoord] = True
+
+	outStream = bitArray()
+
+	for i in range (0, voxXRange):
+		for j in range (0, voxYRange):
+			for k in range (0, voxZRange):
+				topBrick = False
+				allMidBricks = []
+				for ii in range (0, 2):
+					for jj in range (0, 2):
+						for kk in range (0, 2):
+							midBrick = []
+							for iii in range (0, 2):
+								for jjj in range (0, 2):
+									for kkk in range (0, 2):
+										voxelX = i * 4 + ii * 2 + iii
+										voxelY = j * 4 + jj * 2 + jjj
+										voxelZ = k * 4 + kk * 2 + kkk
+										if pointDB[voxelX][voxelY][voxelZ] == True:
+											midBrick.append(True)
+											topBrick = True
+										else:
+											midBrick.append(False)
+							allMidBricks.append (midBrick)
+				if topBrick == True:
+					outStream.append (1, 1)
+					for aMidBrick in allMidBricks:
+						outStream.append (1 if True in aMidBrick else 0, 1)
+					for aMidBrick in allMidBricks:
+						if True in aMidBrick:
+							for aVoxel in aMidBrick:
+								outStream.append (1 if aVoxel == True else 0, 1)
+				else:
+					outStream.append (0, 1)
+
+	shaderSource += "\nconst vec3 grid%dMin = vec3 (%0.2f, %0.2f, %0.2f);" % (svoNum, -voxXRange * 0.5, -voxYRange * 0.5, -voxZRange * 0.5)
+	shaderSource += "\nconst vec3 grid%dMax = vec3 (%0.2f, %0.2f, %0.2f);" % (svoNum, voxXRange * 0.5, voxYRange * 0.5, voxZRange * 0.5)
+	shaderSource += "\nconst vec3 grid%dRange = grid%dMax - grid%dMin;" % (svoNum, svoNum, svoNum)
+	shaderSource += outStream.reportHexArray("svoObject", svoNum)
+	shaderSource += "\nuint readBitsSVO%d (uint bitLoc, uint numBits) {" % (svoNum)
+	shaderSource += "\n    uint wordLoc = bitLoc / 32u;"
+	shaderSource += "\n    uint leftToRead = (32u - (bitLoc % 32u));"
+	shaderSource += "\n    if (numBits <= leftToRead) {"
+	shaderSource += "\n        uint shiftToMask = leftToRead - numBits;"
+	shaderSource += "\n        uint masker = 0xFFFFFFFFu;"
+	shaderSource += "\n        masker >>= uint(32u - numBits);"
+	shaderSource += "\n        masker <<= shiftToMask;"
+	shaderSource += "\n        uint value = (svoObject%d[wordLoc] & masker);" % (svoNum)
+	shaderSource += "\n        value >>= shiftToMask;"
+	shaderSource += "\n        return value;"
+	shaderSource += "\n    } else {"
+	shaderSource += "\n        uint bottomBits = numBits - leftToRead;"
+	shaderSource += "\n        uint masker = 0xFFFFFFFFu;"
+	shaderSource += "\n        masker >>= uint(32u - leftToRead);"
+	shaderSource += "\n        uint topNum = (svoObject%d[wordLoc] & masker);" % (svoNum)
+	shaderSource += "\n        uint bottomMasker = 0xFFFFFFFFu;"
+	shaderSource += "\n        bottomMasker <<= uint(32u - bottomBits);"
+	shaderSource += "\n        uint value = (svoObject%d[wordLoc + 1u] & bottomMasker);" % (svoNum)
+	shaderSource += "\n        uint bottomNum = (value >> uint(32u - bottomBits));"
+	shaderSource += "\n        return ((topNum << bottomBits) | bottomNum);"
+	shaderSource += "\n    }"
+	shaderSource += "\n}"
+	shaderSource += "\n\nbool readLeafSVO%d (vec3 samplePos, out int skipType) {" % (svoNum)
+	shaderSource += "\n    skipType = -1;"
+	shaderSource += "\n    if ( any(lessThan(samplePos, grid%dMin)) || any(greaterThan(samplePos, grid%dMax)) ) return false;" % (svoNum, svoNum)
+	shaderSource += "\n    uvec3 topBrickPos = uvec3 (samplePos - grid%dMin);" % (svoNum)
+	shaderSource += "\n    uint topBrickId = topBrickPos.z + topBrickPos.y * uint(grid0Range.x) + topBrickPos.x * uint(grid0Range.y) * uint(grid0Range.z);"
+	shaderSource += "\n    uint streamReadPos = 0u;"
+	shaderSource += "\n    for (int i = 0; i < int(topBrickId); i++) {"
+	shaderSource += "\n        uint isOcc = readBitsSVO%d (streamReadPos, 1u);" % (svoNum)
+	shaderSource += "\n        streamReadPos += 1u;"
+	shaderSource += "\n        if (isOcc == 1u) {"
+	shaderSource += "\n            uint countMidBricks = countSetBits (readBitsSVO%d (streamReadPos, 8u));" % (svoNum)
+	shaderSource += "\n            streamReadPos += (8u + countMidBricks * 8u);"
+	shaderSource += "\n        }"
+	shaderSource += "\n    }"
+	shaderSource += "\n    uint topBrick = readBitsSVO%d (streamReadPos, 1u);" % (svoNum)
+	shaderSource += "\n    if (topBrick == 0u) {"
+	shaderSource += "\n        skipType = 4;"
+	shaderSource += "\n        return false;"
+	shaderSource += "\n    }"
+	shaderSource += "\n    streamReadPos += 1u;"
+	shaderSource += "\n    uint midBricks = readBitsSVO%d (streamReadPos, 8u);" % (svoNum)
+	shaderSource += "\n    streamReadPos += 8u;"
+	shaderSource += "\n    vec3 topBrickMinCorner = grid%dMin + vec3 (topBrickPos);" % (svoNum)
+	shaderSource += "\n    vec3 sampleRelativeToTopBrick = fract (samplePos);"
+	shaderSource += "\n    uint checkMidBrickBit = 0x80u;"
+	shaderSource += "\n    vec3 sampleRelativeToMidBrick = sampleRelativeToTopBrick;"
+	shaderSource += "\n    if ( sampleRelativeToTopBrick.x > 0.5 ) {"
+	shaderSource += "\n        sampleRelativeToMidBrick.x -= 0.5;"
+	shaderSource += "\n        checkMidBrickBit >>= 4u;"
+	shaderSource += "\n    }"
+	shaderSource += "\n    if ( sampleRelativeToTopBrick.y > 0.5 ) {"
+	shaderSource += "\n        sampleRelativeToMidBrick.y -= 0.5;"
+	shaderSource += "\n        checkMidBrickBit >>= 2u;"
+	shaderSource += "\n    }"
+	shaderSource += "\n    if ( sampleRelativeToTopBrick.z > 0.5 ) {"
+	shaderSource += "\n        sampleRelativeToMidBrick.z -= 0.5;"
+	shaderSource += "\n        checkMidBrickBit >>= 1u;"
+	shaderSource += "\n    }"
+	shaderSource += "\n    if ( (midBricks & checkMidBrickBit) == 0u ) {"
+	shaderSource += "\n        skipType = 2;"
+	shaderSource += "\n        return false;"
+	shaderSource += "\n    }"
+	shaderSource += "\n    uint skipMidBricks = countSetBitsBefore (midBricks, checkMidBrickBit);"
+	shaderSource += "\n    streamReadPos += (8u * skipMidBricks);"
+	shaderSource += "\n    uint finalMidBrick = readBitsSVO%d (streamReadPos, 8u);" % (svoNum)
+	shaderSource += "\n    uint checkVoxelBrickBit = 0x80u;"
+	shaderSource += "\n    if ( sampleRelativeToMidBrick.x > 0.25 ) {"
+	shaderSource += "\n    checkVoxelBrickBit >>= 4u;"
+	shaderSource += "\n    }"
+	shaderSource += "\n    if ( sampleRelativeToMidBrick.y > 0.25 ) {"
+	shaderSource += "\n        checkVoxelBrickBit >>= 2u;"
+	shaderSource += "\n    }"
+	shaderSource += "\n    if ( sampleRelativeToMidBrick.z > 0.25 ) {"
+	shaderSource += "\n        checkVoxelBrickBit >>= 1u;"
+	shaderSource += "\n    }"
+	shaderSource += "\n    if ( (checkVoxelBrickBit & finalMidBrick) != 0u ) return true;"
+	shaderSource += "\n    skipType = 1;"
+	shaderSource += "\n    return false;"
+	shaderSource += "\n}"
+	shaderSource += "\n\nbool traceRaySVO%d(vec3 p1, vec3 p2, out vec3 hitPos) {" % (svoNum)
+	shaderSource += "\n    vec3 m = p2 - p1;"
+	shaderSource += "\n    float hitMin, hitMax;"
+	shaderSource += "\n    if ( !rayBoxIntersectTime (p1, vec3(1.0)/m, grid%dMin, grid%dMax, hitMin, hitMax) ) {" % (svoNum, svoNum)
+	shaderSource += "\n        hitPos = vec3 (-1.0);"
+	shaderSource += "\n        return false;"
+	shaderSource += "\n    }"
+	shaderSource += "\n    "
+	shaderSource += "\n    hitMin += 0.00001;"
+	shaderSource += "\n    hitMax -= 0.00001;"
+	shaderSource += "\n    vec3 curPos = p1 + hitMin * m;"
+	shaderSource += "\n    const float smallestWalk = 0.125;"
+	shaderSource += "\n    int numSteps = int (length ((hitMax - hitMin) * m) / smallestWalk);"
+	shaderSource += "\n    vec3 curDir = normalize (m) * smallestWalk;"
+	shaderSource += "\n    int skipType = 0;"
+	shaderSource += "\n    for (int i = 0; i != numSteps; i++) {"
+	shaderSource += "\n        if (readLeafSVO%d (curPos, skipType)) {" % (svoNum)
+	shaderSource += "\n            hitPos = curPos;"
+	shaderSource += "\n            return true;"
+	shaderSource += "\n        }"
+	shaderSource += "\n        if ( skipType == -1 ) break;"
+	shaderSource += "\n        curPos += curDir * float(skipType);"
+	shaderSource += "\n        i += (skipType - 1);"
+	shaderSource += "\n    }"
+	shaderSource += "\n    return false;"
+	shaderSource += "\n}"
+
+	return shaderSource
+
 def textToBuffer(textContent, shaderSoFar = "", textId = 0):
 	shaderSource = shaderSoFar
 	msg = textContent
@@ -335,20 +611,27 @@ def textToBuffer(textContent, shaderSoFar = "", textId = 0):
 #shader = imageToBuffer('angels2.png', [4.5, 15.500], [1.71, 4.300], shader, 1)
 #shader = imageToBuffer('angelshorse.png', [5.0, 5.0], [1.957, 1.750], shader, 2)
 #shader = imageToBuffer('angels_scroll.png', [2.0, 4.0], [0.5, 2.0], shader, 3)
-shader = imageToBuffer('graffiti.png', [1.0, 1.0], [0.0, 0.0], "", 0, "r2g4b2", "nearest")
-shader = imageToBuffer('graffiti_lowres.png', [1.0, 1.0], [0.0, 0.0], shader, 1, "r2g4b2", "nearest")
-shader = textToBuffer("Yo dude!", shader)
+#shader = imageToBuffer('graffiti.png', [1.0, 1.0], [0.0, 0.0], "", 0, "r2g4b2", "nearest")
+#shader = imageToBuffer('graffiti_lowres.png', [1.0, 1.0], [0.0, 0.0], shader, 1, "r2g4b2", "nearest")
+#shader = textToBuffer("Yo dude!", shader)
 
-file = open('shaderimage.txt', 'w')
-file.write(shader)
-file.close()
+#file = open('shaderimage.txt', 'w')
+#file.write(shader)
+#file.close()
 
 # Convert the sound...
 
 # shader = soundToShaderToy('madworld.mp3', 'madworld.wav', 1220, 1.08, 12.0) # This is for the other shadertoy... ;)
 # shader = soundToShaderToy('angels.mp3', 'angels.wav', 2000, 0.8, 7.6)
-shader = soundToShaderToy('sotb1.mp3', 'sotb1.wav', 3200, 36.0, 5.1)
+# shader = soundToShaderToy('sotb1.mp3', 'sotb1.wav', 3200, 36.0, 5.1)
 
-file = open("shadersound.txt", "w")
+#file = open("shadersound.txt", "w")
+#file.write(shader)
+#file.close()
+
+shader = SVOToBitstream ("bun_zipper.ply")
+shader = SVOToBitstream ("dragon_vrip_res4.ply", shader, 1)
+shader = SVOToBitstream ("armadillo.ply", shader, 2)
+file = open("everything.svo", "w")
 file.write(shader)
 file.close()
