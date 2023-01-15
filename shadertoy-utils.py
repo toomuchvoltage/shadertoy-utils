@@ -378,7 +378,7 @@ uint countSetBitsBefore(uint n, uint comp)
 	return shaderSource + unpackUtils
 
 wroteSVOUnpackUtility = False
-""" BitStream SVO Compression with Morton Sorted Bricks """
+""" BitStream SVO Compression """
 def SVOToBitstream(plyFileName = "", shaderSoFar = "", svoNum = 0):
 	global wroteSVOUnpackUtility
 	shaderSource = ""

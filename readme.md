@@ -1,12 +1,12 @@
 # Shadertoy Utils!
 
-These utilities can turn images, sounds and text into packed buffers for consumption in GLSL... along with the code necessary to reproduce them in Shadertoy!
+These utilities can turn images, sounds, text and even geometry (as Sparse-Voxel Octrees!) into packed buffers for consumption in GLSL... along with the code necessary to reproduce them in Shadertoy!
 
 # Pre-requisites
 
-You need scipy and PIL.
+You need scipy, PIL and plyfile.
 
-    pip install scipy Pillow
+    pip install scipy Pillow plyfile
 
 You also need ffmpeg. I have Windows, so I just downloaded the static builds and placed them in the same directory. If you're on *nix just change:
 
@@ -88,6 +88,33 @@ First parameter is the text to be encoded.
 Second parameter is previous shader code.
 
 Third parameter is the text ID in case of multiple text samplers.
+
+## Geometry as bitstreams representing Sparse-Voxel Octrees
+
+We can actually turn PLY files (only the vertices) into compact bitstreams of Sparse-Voxel Octrees and trace them live!
+The format is as so:
+* For every occupied top-level brick, there's a 1. Otherwise, a 0.
+* A 1 will be followed by 8 bits further showing occupancy of mid-level bricks.
+* There will be a further 8 bits describing voxels for every occupied mid-level brick. Non-occupied mid-level bricks get nothing.
+
+As an example, the way to read the following is:
+01000100011100110000110011
+
+there's an empty top level brick (0), followed by an occupied one (1).
+The second brick has two occupied mid-level bricks represented by the two 1s here: 00010001
+Each of those mid-level bricks have 4 occupied voxels... just in different quadrants:
+00110011 and 11001100.
+
+To use it to encode 3 ply files into the same shader do something like the following:
+
+```
+shader = SVOToBitstream ("bun_zipper.ply")
+shader = SVOToBitstream ("dragon_vrip_res4.ply", shader, 1)
+shader = SVOToBitstream ("armadillo.ply", shader, 2)
+file = open("everything.svo", "w")
+file.write(shader)
+file.close()
+```
 
 # Known issues
 
