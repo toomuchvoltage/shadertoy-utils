@@ -66,8 +66,8 @@ uint readBitsSVO0 (uint bitLoc, uint numBits) {
     }
 }
 
-bool readLeafSVO0 (vec3 samplePos, out int skipType) {
-    skipType = -1;
+bool readLeafSVO0 (vec3 samplePos, vec3 sampleDir, out vec3 skipPos) {
+    skipPos = vec3 (10000.0);
     if ( any(lessThan(samplePos, grid0Min)) || any(greaterThan(samplePos, grid0Max)) ) return false;
     uvec3 topBrickPos = uvec3 (samplePos - grid0Min);
     uint topBrickId = topBrickPos.z + topBrickPos.y * uint(grid0Range.x) + topBrickPos.x * uint(grid0Range.y) * uint(grid0Range.z);
@@ -82,7 +82,14 @@ bool readLeafSVO0 (vec3 samplePos, out int skipType) {
     }
     uint topBrick = readBitsSVO0 (streamReadPos, 1u);
     if (topBrick == 0u) {
-        skipType = 4;
+        vec3 topBrickMin = grid0Min + vec3 (topBrickPos);
+        vec3 topBrickMax = topBrickMin + vec3 (1.0);
+        vec3 p1 = samplePos;
+        vec3 p2 = p1 + sampleDir * 2.0;
+        vec3 m = p2 - p1;
+        float tMin, tMax;
+        rayBoxIntersectTime (p1, vec3(1.0)/m, topBrickMin, topBrickMax, tMin, tMax);
+        skipPos = p1 + m * (tMax + 0.01);
         return false;
     }
     streamReadPos += 1u;
@@ -92,20 +99,31 @@ bool readLeafSVO0 (vec3 samplePos, out int skipType) {
     vec3 sampleRelativeToTopBrick = fract (samplePos);
     uint checkMidBrickBit = 0x80u;
     vec3 sampleRelativeToMidBrick = sampleRelativeToTopBrick;
+    vec3 midBrickPos = vec3 (0.0);
     if ( sampleRelativeToTopBrick.x > 0.5 ) {
         sampleRelativeToMidBrick.x -= 0.5;
+        midBrickPos.x = 0.5;
         checkMidBrickBit >>= 4u;
     }
     if ( sampleRelativeToTopBrick.y > 0.5 ) {
         sampleRelativeToMidBrick.y -= 0.5;
+        midBrickPos.y = 0.5;
         checkMidBrickBit >>= 2u;
     }
     if ( sampleRelativeToTopBrick.z > 0.5 ) {
         sampleRelativeToMidBrick.z -= 0.5;
+        midBrickPos.z = 0.5;
         checkMidBrickBit >>= 1u;
     }
     if ( (midBricks & checkMidBrickBit) == 0u ) {
-        skipType = 2;
+        vec3 midBrickMin = grid0Min + vec3 (topBrickPos) + midBrickPos;
+        vec3 midBrickMax = midBrickMin + vec3 (0.5);
+        vec3 p1 = samplePos;
+        vec3 p2 = p1 + sampleDir * 2.0;
+        vec3 m = p2 - p1;
+        float tMin, tMax;
+        rayBoxIntersectTime (p1, vec3(1.0)/m, midBrickMin, midBrickMax, tMin, tMax);
+        skipPos = p1 + m * (tMax + 0.01);
         return false;
     }
     uint skipMidBricks = countSetBitsBefore (midBricks, checkMidBrickBit);
@@ -122,7 +140,7 @@ bool readLeafSVO0 (vec3 samplePos, out int skipType) {
         checkVoxelBrickBit >>= 1u;
     }
     if ( (checkVoxelBrickBit & finalMidBrick) != 0u ) return true;
-    skipType = 1;
+    skipPos = samplePos + sampleDir * 0.25;
     return false;
 }
 
@@ -137,18 +155,15 @@ bool traceRaySVO0(vec3 p1, vec3 p2, out vec3 hitPos) {
     hitMin += 0.00001;
     hitMax -= 0.00001;
     vec3 curPos = p1 + hitMin * m;
-    const float smallestWalk = 0.125;
-    int numSteps = int (length ((hitMax - hitMin) * m) / smallestWalk);
-    vec3 curDir = normalize (m) * smallestWalk;
-    int skipType = 0;
-    for (int i = 0; i != numSteps; i++) {
-        if (readLeafSVO0 (curPos, skipType)) {
+    vec3 curDir = normalize (m);
+    vec3 skipPos = vec3 (0.0);
+    for (int i = 0; i != 100; i++) {
+        if (readLeafSVO0 (curPos, curDir, skipPos)) {
             hitPos = curPos;
             return true;
         }
-        if ( skipType == -1 ) break;
-        curPos += curDir * float(skipType);
-        i += (skipType - 1);
+        if ( skipPos == vec3(10000.0) ) break;
+        curPos = skipPos;
     }
     return false;
 }
@@ -180,8 +195,8 @@ uint readBitsSVO1 (uint bitLoc, uint numBits) {
     }
 }
 
-bool readLeafSVO1 (vec3 samplePos, out int skipType) {
-    skipType = -1;
+bool readLeafSVO1 (vec3 samplePos, vec3 sampleDir, out vec3 skipPos) {
+    skipPos = vec3 (10000.0);
     if ( any(lessThan(samplePos, grid1Min)) || any(greaterThan(samplePos, grid1Max)) ) return false;
     uvec3 topBrickPos = uvec3 (samplePos - grid1Min);
     uint topBrickId = topBrickPos.z + topBrickPos.y * uint(grid0Range.x) + topBrickPos.x * uint(grid0Range.y) * uint(grid0Range.z);
@@ -196,7 +211,14 @@ bool readLeafSVO1 (vec3 samplePos, out int skipType) {
     }
     uint topBrick = readBitsSVO1 (streamReadPos, 1u);
     if (topBrick == 0u) {
-        skipType = 4;
+        vec3 topBrickMin = grid1Min + vec3 (topBrickPos);
+        vec3 topBrickMax = topBrickMin + vec3 (1.0);
+        vec3 p1 = samplePos;
+        vec3 p2 = p1 + sampleDir * 2.0;
+        vec3 m = p2 - p1;
+        float tMin, tMax;
+        rayBoxIntersectTime (p1, vec3(1.0)/m, topBrickMin, topBrickMax, tMin, tMax);
+        skipPos = p1 + m * (tMax + 0.01);
         return false;
     }
     streamReadPos += 1u;
@@ -206,20 +228,31 @@ bool readLeafSVO1 (vec3 samplePos, out int skipType) {
     vec3 sampleRelativeToTopBrick = fract (samplePos);
     uint checkMidBrickBit = 0x80u;
     vec3 sampleRelativeToMidBrick = sampleRelativeToTopBrick;
+    vec3 midBrickPos = vec3 (0.0);
     if ( sampleRelativeToTopBrick.x > 0.5 ) {
         sampleRelativeToMidBrick.x -= 0.5;
+        midBrickPos.x = 0.5;
         checkMidBrickBit >>= 4u;
     }
     if ( sampleRelativeToTopBrick.y > 0.5 ) {
         sampleRelativeToMidBrick.y -= 0.5;
+        midBrickPos.y = 0.5;
         checkMidBrickBit >>= 2u;
     }
     if ( sampleRelativeToTopBrick.z > 0.5 ) {
         sampleRelativeToMidBrick.z -= 0.5;
+        midBrickPos.z = 0.5;
         checkMidBrickBit >>= 1u;
     }
     if ( (midBricks & checkMidBrickBit) == 0u ) {
-        skipType = 2;
+        vec3 midBrickMin = grid1Min + vec3 (topBrickPos) + midBrickPos;
+        vec3 midBrickMax = midBrickMin + vec3 (0.5);
+        vec3 p1 = samplePos;
+        vec3 p2 = p1 + sampleDir * 2.0;
+        vec3 m = p2 - p1;
+        float tMin, tMax;
+        rayBoxIntersectTime (p1, vec3(1.0)/m, midBrickMin, midBrickMax, tMin, tMax);
+        skipPos = p1 + m * (tMax + 0.01);
         return false;
     }
     uint skipMidBricks = countSetBitsBefore (midBricks, checkMidBrickBit);
@@ -236,7 +269,7 @@ bool readLeafSVO1 (vec3 samplePos, out int skipType) {
         checkVoxelBrickBit >>= 1u;
     }
     if ( (checkVoxelBrickBit & finalMidBrick) != 0u ) return true;
-    skipType = 1;
+    skipPos = samplePos + sampleDir * 0.25;
     return false;
 }
 
@@ -251,18 +284,15 @@ bool traceRaySVO1(vec3 p1, vec3 p2, out vec3 hitPos) {
     hitMin += 0.00001;
     hitMax -= 0.00001;
     vec3 curPos = p1 + hitMin * m;
-    const float smallestWalk = 0.125;
-    int numSteps = int (length ((hitMax - hitMin) * m) / smallestWalk);
-    vec3 curDir = normalize (m) * smallestWalk;
-    int skipType = 0;
-    for (int i = 0; i != numSteps; i++) {
-        if (readLeafSVO1 (curPos, skipType)) {
+    vec3 curDir = normalize (m);
+    vec3 skipPos = vec3 (0.0);
+    for (int i = 0; i != 100; i++) {
+        if (readLeafSVO1 (curPos, curDir, skipPos)) {
             hitPos = curPos;
             return true;
         }
-        if ( skipType == -1 ) break;
-        curPos += curDir * float(skipType);
-        i += (skipType - 1);
+        if ( skipPos == vec3(10000.0) ) break;
+        curPos = skipPos;
     }
     return false;
 }
@@ -294,8 +324,8 @@ uint readBitsSVO2 (uint bitLoc, uint numBits) {
     }
 }
 
-bool readLeafSVO2 (vec3 samplePos, out int skipType) {
-    skipType = -1;
+bool readLeafSVO2 (vec3 samplePos, vec3 sampleDir, out vec3 skipPos) {
+    skipPos = vec3 (10000.0);
     if ( any(lessThan(samplePos, grid2Min)) || any(greaterThan(samplePos, grid2Max)) ) return false;
     uvec3 topBrickPos = uvec3 (samplePos - grid2Min);
     uint topBrickId = topBrickPos.z + topBrickPos.y * uint(grid0Range.x) + topBrickPos.x * uint(grid0Range.y) * uint(grid0Range.z);
@@ -310,7 +340,14 @@ bool readLeafSVO2 (vec3 samplePos, out int skipType) {
     }
     uint topBrick = readBitsSVO2 (streamReadPos, 1u);
     if (topBrick == 0u) {
-        skipType = 4;
+        vec3 topBrickMin = grid2Min + vec3 (topBrickPos);
+        vec3 topBrickMax = topBrickMin + vec3 (1.0);
+        vec3 p1 = samplePos;
+        vec3 p2 = p1 + sampleDir * 2.0;
+        vec3 m = p2 - p1;
+        float tMin, tMax;
+        rayBoxIntersectTime (p1, vec3(1.0)/m, topBrickMin, topBrickMax, tMin, tMax);
+        skipPos = p1 + m * (tMax + 0.01);
         return false;
     }
     streamReadPos += 1u;
@@ -320,20 +357,31 @@ bool readLeafSVO2 (vec3 samplePos, out int skipType) {
     vec3 sampleRelativeToTopBrick = fract (samplePos);
     uint checkMidBrickBit = 0x80u;
     vec3 sampleRelativeToMidBrick = sampleRelativeToTopBrick;
+    vec3 midBrickPos = vec3 (0.0);
     if ( sampleRelativeToTopBrick.x > 0.5 ) {
         sampleRelativeToMidBrick.x -= 0.5;
+        midBrickPos.x = 0.5;
         checkMidBrickBit >>= 4u;
     }
     if ( sampleRelativeToTopBrick.y > 0.5 ) {
         sampleRelativeToMidBrick.y -= 0.5;
+        midBrickPos.y = 0.5;
         checkMidBrickBit >>= 2u;
     }
     if ( sampleRelativeToTopBrick.z > 0.5 ) {
         sampleRelativeToMidBrick.z -= 0.5;
+        midBrickPos.z = 0.5;
         checkMidBrickBit >>= 1u;
     }
     if ( (midBricks & checkMidBrickBit) == 0u ) {
-        skipType = 2;
+        vec3 midBrickMin = grid2Min + vec3 (topBrickPos) + midBrickPos;
+        vec3 midBrickMax = midBrickMin + vec3 (0.5);
+        vec3 p1 = samplePos;
+        vec3 p2 = p1 + sampleDir * 2.0;
+        vec3 m = p2 - p1;
+        float tMin, tMax;
+        rayBoxIntersectTime (p1, vec3(1.0)/m, midBrickMin, midBrickMax, tMin, tMax);
+        skipPos = p1 + m * (tMax + 0.01);
         return false;
     }
     uint skipMidBricks = countSetBitsBefore (midBricks, checkMidBrickBit);
@@ -350,7 +398,7 @@ bool readLeafSVO2 (vec3 samplePos, out int skipType) {
         checkVoxelBrickBit >>= 1u;
     }
     if ( (checkVoxelBrickBit & finalMidBrick) != 0u ) return true;
-    skipType = 1;
+    skipPos = samplePos + sampleDir * 0.25;
     return false;
 }
 
@@ -365,18 +413,15 @@ bool traceRaySVO2(vec3 p1, vec3 p2, out vec3 hitPos) {
     hitMin += 0.00001;
     hitMax -= 0.00001;
     vec3 curPos = p1 + hitMin * m;
-    const float smallestWalk = 0.125;
-    int numSteps = int (length ((hitMax - hitMin) * m) / smallestWalk);
-    vec3 curDir = normalize (m) * smallestWalk;
-    int skipType = 0;
-    for (int i = 0; i != numSteps; i++) {
-        if (readLeafSVO2 (curPos, skipType)) {
+    vec3 curDir = normalize (m);
+    vec3 skipPos = vec3 (0.0);
+    for (int i = 0; i != 100; i++) {
+        if (readLeafSVO2 (curPos, curDir, skipPos)) {
             hitPos = curPos;
             return true;
         }
-        if ( skipType == -1 ) break;
-        curPos += curDir * float(skipType);
-        i += (skipType - 1);
+        if ( skipPos == vec3(10000.0) ) break;
+        curPos = skipPos;
     }
     return false;
 }
