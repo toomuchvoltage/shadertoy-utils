@@ -36,6 +36,7 @@ import subprocess
 from scipy.io import wavfile as wav
 from PIL import Image
 from plyfile import PlyData, PlyElement
+import numpy
 
 """   Unpack util   """
 def writeUnpackVec4():
@@ -377,6 +378,22 @@ uint countSetBitsBefore(uint n, uint comp)
 """
 	return shaderSource + unpackUtils
 
+def tessellate(v1, v2, v3, points):
+	e1 = [v1[0] - v2[0], v1[1] - v2[1], v1[2] - v2[2]]
+	e2 = [v3[0] - v2[0], v3[1] - v2[1], v3[2] - v2[2]]
+	if numpy.linalg.norm (numpy.cross(e1, e2)) * 0.5 > 0.25:
+		mid1 = [(v1[0] + v2[0]) * 0.5, (v1[1] + v2[1]) * 0.5, (v1[2] + v2[2]) * 0.5]
+		mid2 = [(v2[0] + v3[0]) * 0.5, (v2[1] + v3[1]) * 0.5, (v2[2] + v3[2]) * 0.5]
+		mid3 = [(v1[0] + v3[0]) * 0.5, (v1[1] + v3[1]) * 0.5, (v1[2] + v3[2]) * 0.5]
+		tessellate (v1, mid1, mid3, points)
+		tessellate (mid1, v2, mid2, points)
+		tessellate (mid1, mid2, mid3, points)
+		tessellate (mid3, mid2, v3, points)
+	else:
+		points.append (v1)
+		points.append (v2)
+		points.append (v3)
+
 wroteSVOUnpackUtility = False
 """ BitStream SVO Compression """
 def SVOToBitstream(plyFileName = "", shaderSoFar = "", svoNum = 0):
@@ -394,8 +411,17 @@ def SVOToBitstream(plyFileName = "", shaderSoFar = "", svoNum = 0):
 	pointDB = [[[[]for k in range(voxXRange * 4)] for j in range(voxYRange * 4)] for i in range(voxZRange * 4)]
 	pointDBMin = []
 	pointDBMax = []
+	points = []
 	firstTime = True
 	plydata = PlyData.read(plyFileName)
+	for i in plydata['face']['vertex_indices']:
+		v1index = i[0]
+		v2index = i[1]
+		v3index = i[2]
+		v1 = [plydata['vertex'][v1index]['x'], plydata['vertex'][v1index]['y'], plydata['vertex'][v1index]['z']]
+		v2 = [plydata['vertex'][v2index]['x'], plydata['vertex'][v2index]['y'], plydata['vertex'][v2index]['z']]
+		v3 = [plydata['vertex'][v3index]['x'], plydata['vertex'][v3index]['y'], plydata['vertex'][v3index]['z']]
+		tessellate (v1, v2, v3, points)
 	for i in range (0, len(plydata['vertex'])):
 		curPoint = [plydata['vertex'][i]['x'], plydata['vertex'][i]['y'], plydata['vertex'][i]['z']]
 		if firstTime == True:
@@ -407,8 +433,7 @@ def SVOToBitstream(plyFileName = "", shaderSoFar = "", svoNum = 0):
 			pointDBMax = [max (curPoint[0], pointDBMax[0]), max (curPoint[1], pointDBMax[1]), max (curPoint[2], pointDBMax[2])]
 			
 	pointDBRange = [pointDBMax[0] - pointDBMin[0], pointDBMax[1] - pointDBMin[1], pointDBMax[2] - pointDBMin[2]]
-	for i in range (0, len(plydata['vertex'])):
-		curPoint = [plydata['vertex'][i]['x'], plydata['vertex'][i]['y'], plydata['vertex'][i]['z']]
+	for curPoint in points:
 		pointDBXCoord = int (((curPoint[0] - pointDBMin[0]) / pointDBRange[0]) * 0.999999 * voxXRange * 4)
 		pointDBYCoord = int (((curPoint[1] - pointDBMin[1]) / pointDBRange[1]) * 0.999999 * voxYRange * 4)
 		pointDBZCoord = int (((curPoint[2] - pointDBMin[2]) / pointDBRange[2]) * 0.999999 * voxZRange * 4)
