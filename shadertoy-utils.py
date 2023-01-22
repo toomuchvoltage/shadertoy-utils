@@ -365,13 +365,12 @@ uint countSetBits(uint n)
 
 uint countSetBitsBefore(uint n, uint comp)
 {
+	uint beforeMask = comp ^ (comp - 1u); // See: https://realtimecollisiondetection.net/blog/?p=78
+	n &= (~beforeMask);
 	uint count = 0u;
-	uint leadingBit = 0x80u;
 	while (n != 0u) {
-		if ( leadingBit == comp ) return count;
-		if ((n & 0x80u) != 0u) count++;
-		n <<= 1u;
-		leadingBit >>= 1u;
+		count += (n & 1u);
+		n >>= 1u;
 	}
 	return count;
 }
@@ -499,9 +498,10 @@ def SVOToBitstream(plyFileName = "", shaderSoFar = "", svoNum = 0):
 	shaderSource += "\n        masker >>= uint(32u - leftToRead);"
 	shaderSource += "\n        uint topNum = (svoObject%d[wordLoc] & masker);" % (svoNum)
 	shaderSource += "\n        uint bottomMasker = 0xFFFFFFFFu;"
-	shaderSource += "\n        bottomMasker <<= uint(32u - bottomBits);"
+	shaderSource += "\n        uint bottomShifter = uint(32u - bottomBits);"
+	shaderSource += "\n        bottomMasker <<= bottomShifter;"
 	shaderSource += "\n        uint value = (svoObject%d[wordLoc + 1u] & bottomMasker);" % (svoNum)
-	shaderSource += "\n        uint bottomNum = (value >> uint(32u - bottomBits));"
+	shaderSource += "\n        uint bottomNum = (value >> bottomShifter);"
 	shaderSource += "\n        return ((topNum << bottomBits) | bottomNum);"
 	shaderSource += "\n    }"
 	shaderSource += "\n}"

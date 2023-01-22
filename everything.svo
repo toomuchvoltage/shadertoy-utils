@@ -27,13 +27,12 @@ uint countSetBits(uint n)
 
 uint countSetBitsBefore(uint n, uint comp)
 {
+	uint beforeMask = comp ^ (comp - 1u); // See: https://realtimecollisiondetection.net/blog/?p=78
+	n &= (~beforeMask);
 	uint count = 0u;
-	uint leadingBit = 0x80u;
 	while (n != 0u) {
-		if ( leadingBit == comp ) return count;
-		if ((n & 0x80u) != 0u) count++;
-		n <<= 1u;
-		leadingBit >>= 1u;
+		count += (n & 1u);
+		n >>= 1u;
 	}
 	return count;
 }
@@ -59,9 +58,10 @@ uint readBitsSVO0 (uint bitLoc, uint numBits) {
         masker >>= uint(32u - leftToRead);
         uint topNum = (svoObject0[wordLoc] & masker);
         uint bottomMasker = 0xFFFFFFFFu;
-        bottomMasker <<= uint(32u - bottomBits);
+        uint bottomShifter = uint(32u - bottomBits);
+        bottomMasker <<= bottomShifter;
         uint value = (svoObject0[wordLoc + 1u] & bottomMasker);
-        uint bottomNum = (value >> uint(32u - bottomBits));
+        uint bottomNum = (value >> bottomShifter);
         return ((topNum << bottomBits) | bottomNum);
     }
 }
@@ -188,9 +188,10 @@ uint readBitsSVO1 (uint bitLoc, uint numBits) {
         masker >>= uint(32u - leftToRead);
         uint topNum = (svoObject1[wordLoc] & masker);
         uint bottomMasker = 0xFFFFFFFFu;
-        bottomMasker <<= uint(32u - bottomBits);
+        uint bottomShifter = uint(32u - bottomBits);
+        bottomMasker <<= bottomShifter;
         uint value = (svoObject1[wordLoc + 1u] & bottomMasker);
-        uint bottomNum = (value >> uint(32u - bottomBits));
+        uint bottomNum = (value >> bottomShifter);
         return ((topNum << bottomBits) | bottomNum);
     }
 }
@@ -317,9 +318,10 @@ uint readBitsSVO2 (uint bitLoc, uint numBits) {
         masker >>= uint(32u - leftToRead);
         uint topNum = (svoObject2[wordLoc] & masker);
         uint bottomMasker = 0xFFFFFFFFu;
-        bottomMasker <<= uint(32u - bottomBits);
+        uint bottomShifter = uint(32u - bottomBits);
+        bottomMasker <<= bottomShifter;
         uint value = (svoObject2[wordLoc + 1u] & bottomMasker);
-        uint bottomNum = (value >> uint(32u - bottomBits));
+        uint bottomNum = (value >> bottomShifter);
         return ((topNum << bottomBits) | bottomNum);
     }
 }
