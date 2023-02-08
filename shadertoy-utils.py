@@ -23,7 +23,7 @@
 """
 
 """
-   You need PIL and scipy: pip install scipy Pillow
+   You need PIL, scipy and plyfile: pip install scipy Pillow plyfile
    
    ... and you need ffmpeg too, so replace the following path ...
 """
