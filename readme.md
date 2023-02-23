@@ -116,6 +116,8 @@ file.write(shader)
 file.close()
 ```
 
+Utilities for unpacking these bitstreams to an RGBA32F target and tracing them from there are also appended to the bottom of the generated GLSL code.
+
 # Known issues
 
 Apparently ANGLE's OpenGL backend does not like large uniform arrays. '\\\_o.O\_/`
