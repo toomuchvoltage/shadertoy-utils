@@ -131,7 +131,7 @@ bool readLeafSVO0 (vec3 samplePos, vec3 sampleDir, out vec3 skipPos) {
     uint finalMidBrick = readBitsSVO0 (streamReadPos, 8u);
     uint checkVoxelBrickBit = 0x80u;
     if ( sampleRelativeToMidBrick.x > 0.25 ) {
-    checkVoxelBrickBit >>= 4u;
+        checkVoxelBrickBit >>= 4u;
     }
     if ( sampleRelativeToMidBrick.y > 0.25 ) {
         checkVoxelBrickBit >>= 2u;
@@ -166,6 +166,79 @@ bool traceRaySVO0(vec3 p1, vec3 p2, out vec3 hitPos) {
         curPos = skipPos;
     }
     return false;
+}
+
+void decodeSVO0( inout vec4 fragColor, vec2 fragCoord ) {
+    uvec2 pixCoord = uvec2 (fragCoord - vec2 (0.5));
+    if ( iFrame % 60 == 0 && all (lessThan (pixCoord,uvec2 (uint(grid0Range.x), uint(grid0Range.y * grid0Range.y)/2u))) ) {
+        uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;
+        vec3 baseCoord;
+        baseCoord.x = float (pixCoord.x % uint(grid0Range.x)) - float(uint(grid0Range.x)/2u);
+        baseCoord.y = float (pixCoord.y % uint(grid0Range.y)) - float(uint(grid0Range.y)/2u);
+        baseCoord.z = float (pixCoord.y / uint(grid0Range.y)) * 2.0 - float(uint(grid0Range.z)/2u);
+        for (uint zone = 0u; zone != 2u; zone++) {
+            for (uint k = 0u;k != 4u; k++) {
+                for (uint j = 0u;j != 4u; j++) {
+                    for (uint i = 0u;i != 4u; i++) {
+                        bool occupancy = readLeafSVO0 (baseCoord + vec3 (i, j, k) * 0.25 + vec3 (0.001, -0.001, float(zone) + 0.001));
+                        if (!occupancy) continue;
+                        uint write = (1u << i);
+                        write <<= (j * 4u);
+                        if ( zone == 0u ) {
+                            if ( k < 2u ) {
+                                write <<= (k * 16u);
+                                writeR |= write;
+                            } else {
+                                write <<= ((k - 2u) * 16u);
+                                writeG |= write;
+                            }
+                        } else {
+                            if ( k < 2u ) {
+                                write <<= (k * 16u);
+                                writeB |= write;
+                            } else {
+                                write <<= ((k - 2u) * 16u);
+                                writeA |= write;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        fragColor = vec4 (uintBitsToFloat(writeR), uintBitsToFloat(writeG), uintBitsToFloat(writeB), uintBitsToFloat(writeA));
+    }
+    else {
+        fragColor = texelFetch (iChannel0, ivec2(fragCoord - vec2 (0.5)), 0);
+    }
+}
+
+bool occupancyReadGrid0 (vec3 samplePos) {
+    if ( any(lessThan(samplePos, grid0Min)) || any(greaterThan(samplePos, grid0Max)) ) return false;
+    vec3 samplePosRel = samplePos - grid0Min;
+    uvec3 fetchPos = uvec3 (samplePosRel);
+    ivec2 sampleCoord = ivec2 (fetchPos.x, fetchPos.y + uint (fetchPos.z/2u) * uint(grid0Range.y));
+    vec4 fetchTexel = texelFetch (iChannel0, sampleCoord, 0);
+    uvec4 fetchTexelRGBA = uvec4 (floatBitsToUint(fetchTexel.x), floatBitsToUint(fetchTexel.y), floatBitsToUint(fetchTexel.z), floatBitsToUint(fetchTexel.a));
+    uvec3 checkBits = uvec3 (fract (samplePosRel) * 4.0);
+    uint shiftBits = 0u;
+    if (checkBits.z < 2u)
+        shiftBits = checkBits.x + checkBits.y * 4u + checkBits.z * 16u;
+    else
+        shiftBits = checkBits.x + checkBits.y * 4u + (checkBits.z - 2u) * 16u;
+    uint readUint;
+    if ((fetchPos.z % 2u) == 0u)
+        if (checkBits.z < 2u)
+            readUint = fetchTexelRGBA.x;
+        else
+            readUint = fetchTexelRGBA.y;
+    else
+        if (checkBits.z < 2u)
+            readUint = fetchTexelRGBA.z;
+        else
+            readUint = fetchTexelRGBA.a;
+    uint maskBits = (1u << shiftBits);
+    if ( (readUint & maskBits) == 0u ) return false;
+    return true;
 }
 const vec3 grid1Min = vec3 (-5.00, -5.00, -5.00);
 const vec3 grid1Max = vec3 (5.00, 5.00, 5.00);
@@ -261,7 +334,7 @@ bool readLeafSVO1 (vec3 samplePos, vec3 sampleDir, out vec3 skipPos) {
     uint finalMidBrick = readBitsSVO1 (streamReadPos, 8u);
     uint checkVoxelBrickBit = 0x80u;
     if ( sampleRelativeToMidBrick.x > 0.25 ) {
-    checkVoxelBrickBit >>= 4u;
+        checkVoxelBrickBit >>= 4u;
     }
     if ( sampleRelativeToMidBrick.y > 0.25 ) {
         checkVoxelBrickBit >>= 2u;
@@ -296,6 +369,79 @@ bool traceRaySVO1(vec3 p1, vec3 p2, out vec3 hitPos) {
         curPos = skipPos;
     }
     return false;
+}
+
+void decodeSVO1( inout vec4 fragColor, vec2 fragCoord ) {
+    uvec2 pixCoord = uvec2 (fragCoord - vec2 (0.5));
+    if ( iFrame % 60 == 0 && all (lessThan (pixCoord,uvec2 (uint(grid1Range.x), uint(grid1Range.y * grid1Range.y)/2u))) ) {
+        uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;
+        vec3 baseCoord;
+        baseCoord.x = float (pixCoord.x % uint(grid1Range.x)) - float(uint(grid1Range.x)/2u);
+        baseCoord.y = float (pixCoord.y % uint(grid1Range.y)) - float(uint(grid1Range.y)/2u);
+        baseCoord.z = float (pixCoord.y / uint(grid1Range.y)) * 2.0 - float(uint(grid1Range.z)/2u);
+        for (uint zone = 0u; zone != 2u; zone++) {
+            for (uint k = 0u;k != 4u; k++) {
+                for (uint j = 0u;j != 4u; j++) {
+                    for (uint i = 0u;i != 4u; i++) {
+                        bool occupancy = readLeafSVO1 (baseCoord + vec3 (i, j, k) * 0.25 + vec3 (0.001, -0.001, float(zone) + 0.001));
+                        if (!occupancy) continue;
+                        uint write = (1u << i);
+                        write <<= (j * 4u);
+                        if ( zone == 0u ) {
+                            if ( k < 2u ) {
+                                write <<= (k * 16u);
+                                writeR |= write;
+                            } else {
+                                write <<= ((k - 2u) * 16u);
+                                writeG |= write;
+                            }
+                        } else {
+                            if ( k < 2u ) {
+                                write <<= (k * 16u);
+                                writeB |= write;
+                            } else {
+                                write <<= ((k - 2u) * 16u);
+                                writeA |= write;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        fragColor = vec4 (uintBitsToFloat(writeR), uintBitsToFloat(writeG), uintBitsToFloat(writeB), uintBitsToFloat(writeA));
+    }
+    else {
+        fragColor = texelFetch (iChannel1, ivec2(fragCoord - vec2 (0.5)), 0);
+    }
+}
+
+bool occupancyReadGrid1 (vec3 samplePos) {
+    if ( any(lessThan(samplePos, grid1Min)) || any(greaterThan(samplePos, grid1Max)) ) return false;
+    vec3 samplePosRel = samplePos - grid1Min;
+    uvec3 fetchPos = uvec3 (samplePosRel);
+    ivec2 sampleCoord = ivec2 (fetchPos.x, fetchPos.y + uint (fetchPos.z/2u) * uint(grid1Range.y));
+    vec4 fetchTexel = texelFetch (iChannel1, sampleCoord, 0);
+    uvec4 fetchTexelRGBA = uvec4 (floatBitsToUint(fetchTexel.x), floatBitsToUint(fetchTexel.y), floatBitsToUint(fetchTexel.z), floatBitsToUint(fetchTexel.a));
+    uvec3 checkBits = uvec3 (fract (samplePosRel) * 4.0);
+    uint shiftBits = 0u;
+    if (checkBits.z < 2u)
+        shiftBits = checkBits.x + checkBits.y * 4u + checkBits.z * 16u;
+    else
+        shiftBits = checkBits.x + checkBits.y * 4u + (checkBits.z - 2u) * 16u;
+    uint readUint;
+    if ((fetchPos.z % 2u) == 0u)
+        if (checkBits.z < 2u)
+            readUint = fetchTexelRGBA.x;
+        else
+            readUint = fetchTexelRGBA.y;
+    else
+        if (checkBits.z < 2u)
+            readUint = fetchTexelRGBA.z;
+        else
+            readUint = fetchTexelRGBA.a;
+    uint maskBits = (1u << shiftBits);
+    if ( (readUint & maskBits) == 0u ) return false;
+    return true;
 }
 const vec3 grid2Min = vec3 (-5.00, -5.00, -5.00);
 const vec3 grid2Max = vec3 (5.00, 5.00, 5.00);
@@ -391,7 +537,7 @@ bool readLeafSVO2 (vec3 samplePos, vec3 sampleDir, out vec3 skipPos) {
     uint finalMidBrick = readBitsSVO2 (streamReadPos, 8u);
     uint checkVoxelBrickBit = 0x80u;
     if ( sampleRelativeToMidBrick.x > 0.25 ) {
-    checkVoxelBrickBit >>= 4u;
+        checkVoxelBrickBit >>= 4u;
     }
     if ( sampleRelativeToMidBrick.y > 0.25 ) {
         checkVoxelBrickBit >>= 2u;
@@ -426,4 +572,77 @@ bool traceRaySVO2(vec3 p1, vec3 p2, out vec3 hitPos) {
         curPos = skipPos;
     }
     return false;
+}
+
+void decodeSVO2( inout vec4 fragColor, vec2 fragCoord ) {
+    uvec2 pixCoord = uvec2 (fragCoord - vec2 (0.5));
+    if ( iFrame % 60 == 0 && all (lessThan (pixCoord,uvec2 (uint(grid2Range.x), uint(grid2Range.y * grid2Range.y)/2u))) ) {
+        uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;
+        vec3 baseCoord;
+        baseCoord.x = float (pixCoord.x % uint(grid2Range.x)) - float(uint(grid2Range.x)/2u);
+        baseCoord.y = float (pixCoord.y % uint(grid2Range.y)) - float(uint(grid2Range.y)/2u);
+        baseCoord.z = float (pixCoord.y / uint(grid2Range.y)) * 2.0 - float(uint(grid2Range.z)/2u);
+        for (uint zone = 0u; zone != 2u; zone++) {
+            for (uint k = 0u;k != 4u; k++) {
+                for (uint j = 0u;j != 4u; j++) {
+                    for (uint i = 0u;i != 4u; i++) {
+                        bool occupancy = readLeafSVO2 (baseCoord + vec3 (i, j, k) * 0.25 + vec3 (0.001, -0.001, float(zone) + 0.001));
+                        if (!occupancy) continue;
+                        uint write = (1u << i);
+                        write <<= (j * 4u);
+                        if ( zone == 0u ) {
+                            if ( k < 2u ) {
+                                write <<= (k * 16u);
+                                writeR |= write;
+                            } else {
+                                write <<= ((k - 2u) * 16u);
+                                writeG |= write;
+                            }
+                        } else {
+                            if ( k < 2u ) {
+                                write <<= (k * 16u);
+                                writeB |= write;
+                            } else {
+                                write <<= ((k - 2u) * 16u);
+                                writeA |= write;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        fragColor = vec4 (uintBitsToFloat(writeR), uintBitsToFloat(writeG), uintBitsToFloat(writeB), uintBitsToFloat(writeA));
+    }
+    else {
+        fragColor = texelFetch (iChannel2, ivec2(fragCoord - vec2 (0.5)), 0);
+    }
+}
+
+bool occupancyReadGrid2 (vec3 samplePos) {
+    if ( any(lessThan(samplePos, grid2Min)) || any(greaterThan(samplePos, grid2Max)) ) return false;
+    vec3 samplePosRel = samplePos - grid2Min;
+    uvec3 fetchPos = uvec3 (samplePosRel);
+    ivec2 sampleCoord = ivec2 (fetchPos.x, fetchPos.y + uint (fetchPos.z/2u) * uint(grid2Range.y));
+    vec4 fetchTexel = texelFetch (iChannel2, sampleCoord, 0);
+    uvec4 fetchTexelRGBA = uvec4 (floatBitsToUint(fetchTexel.x), floatBitsToUint(fetchTexel.y), floatBitsToUint(fetchTexel.z), floatBitsToUint(fetchTexel.a));
+    uvec3 checkBits = uvec3 (fract (samplePosRel) * 4.0);
+    uint shiftBits = 0u;
+    if (checkBits.z < 2u)
+        shiftBits = checkBits.x + checkBits.y * 4u + checkBits.z * 16u;
+    else
+        shiftBits = checkBits.x + checkBits.y * 4u + (checkBits.z - 2u) * 16u;
+    uint readUint;
+    if ((fetchPos.z % 2u) == 0u)
+        if (checkBits.z < 2u)
+            readUint = fetchTexelRGBA.x;
+        else
+            readUint = fetchTexelRGBA.y;
+    else
+        if (checkBits.z < 2u)
+            readUint = fetchTexelRGBA.z;
+        else
+            readUint = fetchTexelRGBA.a;
+    uint maskBits = (1u << shiftBits);
+    if ( (readUint & maskBits) == 0u ) return false;
+    return true;
 }

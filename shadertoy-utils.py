@@ -397,7 +397,7 @@ def tessellate(v1, v2, v3, rangeMeasure, points):
 
 wroteSVOUnpackUtility = False
 """ BitStream SVO Compression """
-def SVOToBitstream(plyFileName = "", shaderSoFar = "", svoNum = 0):
+def SVOToBitstream(plyFileName, shaderSoFar = "", svoNum = 0):
 	global wroteSVOUnpackUtility
 	shaderSource = ""
 	shaderSource += shaderSoFar
@@ -570,7 +570,7 @@ def SVOToBitstream(plyFileName = "", shaderSoFar = "", svoNum = 0):
 	shaderSource += "\n    uint finalMidBrick = readBitsSVO%d (streamReadPos, 8u);" % (svoNum)
 	shaderSource += "\n    uint checkVoxelBrickBit = 0x80u;"
 	shaderSource += "\n    if ( sampleRelativeToMidBrick.x > 0.25 ) {"
-	shaderSource += "\n    checkVoxelBrickBit >>= 4u;"
+	shaderSource += "\n        checkVoxelBrickBit >>= 4u;"
 	shaderSource += "\n    }"
 	shaderSource += "\n    if ( sampleRelativeToMidBrick.y > 0.25 ) {"
 	shaderSource += "\n        checkVoxelBrickBit >>= 2u;"
@@ -604,6 +604,77 @@ def SVOToBitstream(plyFileName = "", shaderSoFar = "", svoNum = 0):
 	shaderSource += "\n        curPos = skipPos;"
 	shaderSource += "\n    }"
 	shaderSource += "\n    return false;"
+	shaderSource += "\n}"
+	shaderSource += "\n\nvoid decodeSVO%d( inout vec4 fragColor, vec2 fragCoord ) {" % (svoNum)
+	shaderSource += "\n    uvec2 pixCoord = uvec2 (fragCoord - vec2 (0.5));"
+	shaderSource += "\n    if ( iFrame %% 60 == 0 && all (lessThan (pixCoord,uvec2 (uint(grid%dRange.x), uint(grid%dRange.y * grid%dRange.y)/2u))) ) {" % (svoNum, svoNum, svoNum)
+	shaderSource += "\n        uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;"
+	shaderSource += "\n        vec3 baseCoord;"
+	shaderSource += "\n        baseCoord.x = float (pixCoord.x %% uint(grid%dRange.x)) - float(uint(grid%dRange.x)/2u);" % (svoNum, svoNum)
+	shaderSource += "\n        baseCoord.y = float (pixCoord.y %% uint(grid%dRange.y)) - float(uint(grid%dRange.y)/2u);" % (svoNum, svoNum)
+	shaderSource += "\n        baseCoord.z = float (pixCoord.y / uint(grid%dRange.y)) * 2.0 - float(uint(grid%dRange.z)/2u);" % (svoNum, svoNum)
+	shaderSource += "\n        for (uint zone = 0u; zone != 2u; zone++) {"
+	shaderSource += "\n            for (uint k = 0u;k != 4u; k++) {"
+	shaderSource += "\n                for (uint j = 0u;j != 4u; j++) {"
+	shaderSource += "\n                    for (uint i = 0u;i != 4u; i++) {"
+	shaderSource += "\n                        bool occupancy = readLeafSVO%d (baseCoord + vec3 (i, j, k) * 0.25 + vec3 (0.001, -0.001, float(zone) + 0.001));" % (svoNum)
+	shaderSource += "\n                        if (!occupancy) continue;"
+	shaderSource += "\n                        uint write = (1u << i);"
+	shaderSource += "\n                        write <<= (j * 4u);"
+	shaderSource += "\n                        if ( zone == 0u ) {"
+	shaderSource += "\n                            if ( k < 2u ) {"
+	shaderSource += "\n                                write <<= (k * 16u);"
+	shaderSource += "\n                                writeR |= write;"
+	shaderSource += "\n                            } else {"
+	shaderSource += "\n                                write <<= ((k - 2u) * 16u);"
+	shaderSource += "\n                                writeG |= write;"
+	shaderSource += "\n                            }"
+	shaderSource += "\n                        } else {"
+	shaderSource += "\n                            if ( k < 2u ) {"
+	shaderSource += "\n                                write <<= (k * 16u);"
+	shaderSource += "\n                                writeB |= write;"
+	shaderSource += "\n                            } else {"
+	shaderSource += "\n                                write <<= ((k - 2u) * 16u);"
+	shaderSource += "\n                                writeA |= write;"
+	shaderSource += "\n                            }"
+	shaderSource += "\n                        }"
+	shaderSource += "\n                    }"
+	shaderSource += "\n                }"
+	shaderSource += "\n            }"
+	shaderSource += "\n        }"
+	shaderSource += "\n        fragColor = vec4 (uintBitsToFloat(writeR), uintBitsToFloat(writeG), uintBitsToFloat(writeB), uintBitsToFloat(writeA));"
+	shaderSource += "\n    }"
+	shaderSource += "\n    else {"
+	shaderSource += "\n        fragColor = texelFetch (iChannel%d, ivec2(fragCoord - vec2 (0.5)), 0);" % (svoNum)
+	shaderSource += "\n    }"
+	shaderSource += "\n}"
+	shaderSource += "\n\nbool occupancyReadGrid%d (vec3 samplePos) {" % (svoNum)
+	shaderSource += "\n    if ( any(lessThan(samplePos, grid%dMin)) || any(greaterThan(samplePos, grid%dMax)) ) return false;" % (svoNum, svoNum)
+	shaderSource += "\n    vec3 samplePosRel = samplePos - grid%dMin;" % (svoNum)
+	shaderSource += "\n    uvec3 fetchPos = uvec3 (samplePosRel);"
+	shaderSource += "\n    ivec2 sampleCoord = ivec2 (fetchPos.x, fetchPos.y + uint (fetchPos.z/2u) * uint(grid%dRange.y));" % (svoNum)
+	shaderSource += "\n    vec4 fetchTexel = texelFetch (iChannel%d, sampleCoord, 0);" % (svoNum)
+	shaderSource += "\n    uvec4 fetchTexelRGBA = uvec4 (floatBitsToUint(fetchTexel.x), floatBitsToUint(fetchTexel.y), floatBitsToUint(fetchTexel.z), floatBitsToUint(fetchTexel.a));"
+	shaderSource += "\n    uvec3 checkBits = uvec3 (fract (samplePosRel) * 4.0);"
+	shaderSource += "\n    uint shiftBits = 0u;"
+	shaderSource += "\n    if (checkBits.z < 2u)"
+	shaderSource += "\n        shiftBits = checkBits.x + checkBits.y * 4u + checkBits.z * 16u;"
+	shaderSource += "\n    else"
+	shaderSource += "\n        shiftBits = checkBits.x + checkBits.y * 4u + (checkBits.z - 2u) * 16u;"
+	shaderSource += "\n    uint readUint;"
+	shaderSource += "\n    if ((fetchPos.z % 2u) == 0u)"
+	shaderSource += "\n        if (checkBits.z < 2u)"
+	shaderSource += "\n            readUint = fetchTexelRGBA.x;"
+	shaderSource += "\n        else"
+	shaderSource += "\n            readUint = fetchTexelRGBA.y;"
+	shaderSource += "\n    else"
+	shaderSource += "\n        if (checkBits.z < 2u)"
+	shaderSource += "\n            readUint = fetchTexelRGBA.z;"
+	shaderSource += "\n        else"
+	shaderSource += "\n            readUint = fetchTexelRGBA.a;"
+	shaderSource += "\n    uint maskBits = (1u << shiftBits);"
+	shaderSource += "\n    if ( (readUint & maskBits) == 0u ) return false;"
+	shaderSource += "\n    return true;"
 	shaderSource += "\n}"
 
 	return shaderSource
