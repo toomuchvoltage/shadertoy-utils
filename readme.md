@@ -116,7 +116,9 @@ file.write(shader)
 file.close()
 ```
 
-Utilities for unpacking these bitstreams to an RGBA32F target and tracing them from there are also appended to the bottom of the generated GLSL code.
+Two sets of utilities are also appended for each packed bitstream:
+- Utilities for unpacking these bitstreams to an RGBA32F target and sampling them from there.
+- Utilities that fully unpack and JFA the bitstreams into an RGBA32F target and read the target to create a complete distance field.
 
 # Known issues
 
