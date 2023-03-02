@@ -676,7 +676,268 @@ def SVOToBitstream(plyFileName, shaderSoFar = "", svoNum = 0):
 	shaderSource += "\n    if ( (readUint & maskBits) == 0u ) return false;"
 	shaderSource += "\n    return true;"
 	shaderSource += "\n}"
-
+	shaderSource += "\n\nvoid decodeAndJFA_SVO%d( out vec4 fragColor, in vec2 fragCoord )" % (svoNum)
+	shaderSource += "\n{"
+	shaderSource += "\n    uvec2 pixCoord = uvec2 (fragCoord - vec2 (0.5));"
+	shaderSource += "\n    const uint tilingSide = uint (floor (sqrt(grid%dRange.z))) + 1u;" % (svoNum)
+	shaderSource += "\n"    
+	shaderSource += "\n    int log2N = int(ceil(log2(max (max(grid%dRange.x * 4.0, grid%dRange.y * 4.0), grid%dRange.z * 4.0))));" % (svoNum, svoNum, svoNum)
+	shaderSource += "\n    float offsetPower = float (log2N - (iFrame-1) - 1);"
+	shaderSource += "\n    bool isInJFAResolution = all (lessThan (pixCoord,uvec2 (uint(grid%dRange.x), uint(grid%dRange.y)) * 4u * tilingSide));" % (svoNum, svoNum)
+	shaderSource += "\n    float zRange = ceil (grid%dRange.z * 4.0 * 0.0625);" % (svoNum)
+	shaderSource += "\n    bool isInJFACompactionResolution = all (lessThan (pixCoord, uvec2 (uint(grid%dRange.x * 4.0), uint(grid%dRange.y * 4.0 * zRange))));" % (svoNum, svoNum)
+	shaderSource += "\n"
+	shaderSource += "\n    if ( iFrame == 0 && isInJFAResolution ) {"
+	shaderSource += "\n        vec3 baseCoord;"
+	shaderSource += "\n        baseCoord.x = float (pixCoord.x %% uint(grid%dRange.x * 4.0)) - float(uint(grid%dRange.x * 4.0)/2u);" % (svoNum, svoNum)
+	shaderSource += "\n        baseCoord.y = float (pixCoord.y %% uint(grid%dRange.y * 4.0)) - float(uint(grid%dRange.y * 4.0)/2u);" % (svoNum, svoNum)
+	shaderSource += "\n        baseCoord.z = (float (pixCoord.y / uint(grid%dRange.y * 4.0)) * float(tilingSide) + float (pixCoord.x / uint(grid%dRange.x * 4.0))) * 4.0 - float(uint(grid%dRange.z * 4.0)/2u);" % (svoNum, svoNum, svoNum)
+	shaderSource += "\n        baseCoord *= 0.25;"
+	shaderSource += "\n        if ( baseCoord.z >= grid%dMax.z )" % (svoNum)
+	shaderSource += "\n        {"
+	shaderSource += "\n            fragColor = vec4 (uintBitsToFloat(0u), uintBitsToFloat(0u), uintBitsToFloat(0u), uintBitsToFloat(0u));"
+	shaderSource += "\n            return ;"
+	shaderSource += "\n        }"
+	shaderSource += "\n        uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;"
+	shaderSource += "\n        vec3 pos1 = baseCoord + vec3 (0, 0, 0);"
+	shaderSource += "\n        vec3 pos2 = baseCoord + vec3 (0, 0, 0.25);"
+	shaderSource += "\n        vec3 pos3 = baseCoord + vec3 (0, 0, 0.5);"
+	shaderSource += "\n        vec3 pos4 = baseCoord + vec3 (0, 0, 0.75);"
+	shaderSource += "\n        bool occupancy1 = readLeafSVO%d (pos1 + vec3 (0.001, -0.001, 0.001));" % (svoNum)
+	shaderSource += "\n        bool occupancy2 = readLeafSVO%d (pos2 + vec3 (0.001, -0.001, 0.001));" % (svoNum)
+	shaderSource += "\n        bool occupancy3 = readLeafSVO%d (pos3 + vec3 (0.001, -0.001, 0.001));" % (svoNum)
+	shaderSource += "\n        bool occupancy4 = readLeafSVO%d (pos4 + vec3 (0.001, -0.001, 0.001));" % (svoNum)
+	shaderSource += "\n        if ( occupancy1 )"
+	shaderSource += "\n        {"
+	shaderSource += "\n            pos1 *= 4.0;"
+	shaderSource += "\n            pos1 += vec3(uint(grid%dRange * 4.0)/2u);" % (svoNum)
+	shaderSource += "\n            writeR = 0xFF000000u;"
+	shaderSource += "\n            writeR |= (uint(pos1.x) << 16);"
+	shaderSource += "\n            writeR |= (uint(pos1.y) << 8);"
+	shaderSource += "\n            writeR |= uint(pos1.z);"
+	shaderSource += "\n        }"
+	shaderSource += "\n        if ( occupancy2 )"
+	shaderSource += "\n        {"
+	shaderSource += "\n            pos2 *= 4.0;"
+	shaderSource += "\n            pos2 += vec3(uint(grid%dRange * 4.0)/2u);" % (svoNum)
+	shaderSource += "\n            writeG = 0xFF000000u;"
+	shaderSource += "\n            writeG |= (uint(pos2.x) << 16);"
+	shaderSource += "\n            writeG |= (uint(pos2.y) << 8);"
+	shaderSource += "\n            writeG |= uint(pos2.z);"
+	shaderSource += "\n        }"
+	shaderSource += "\n        if ( occupancy3 )"
+	shaderSource += "\n        {"
+	shaderSource += "\n            pos3 *= 4.0;"
+	shaderSource += "\n            pos3 += vec3(uint(grid%dRange * 4.0)/2u);" % (svoNum)
+	shaderSource += "\n            writeB = 0xFF000000u;"
+	shaderSource += "\n            writeB |= (uint(pos3.x) << 16);"
+	shaderSource += "\n            writeB |= (uint(pos3.y) << 8);"
+	shaderSource += "\n            writeB |= uint(pos3.z);"
+	shaderSource += "\n        }"
+	shaderSource += "\n        if ( occupancy4 )"
+	shaderSource += "\n        {"
+	shaderSource += "\n            pos4 *= 4.0;"
+	shaderSource += "\n            pos4 += vec3(uint(grid%dRange * 4.0)/2u);" % (svoNum)
+	shaderSource += "\n            writeA = 0xFF000000u;"
+	shaderSource += "\n            writeA |= (uint(pos4.x) << 16);"
+	shaderSource += "\n            writeA |= (uint(pos4.y) << 8);"
+	shaderSource += "\n            writeA |= uint(pos4.z);"
+	shaderSource += "\n        }"
+	shaderSource += "\n        fragColor = vec4 (uintBitsToFloat(writeR), uintBitsToFloat(writeG), uintBitsToFloat(writeB), uintBitsToFloat(writeA));"
+	shaderSource += "\n    } else if ( iFrame > 0 && offsetPower >= 0.0 && isInJFAResolution ) {"
+	shaderSource += "\n        vec3 baseCoord;"
+	shaderSource += "\n        baseCoord.x = float (pixCoord.x %% uint(grid%dRange.x * 4.0)) - float(uint(grid0Range.x * 4.0)/2u);" % (svoNum)
+	shaderSource += "\n        baseCoord.y = float (pixCoord.y %% uint(grid%dRange.y * 4.0)) - float(uint(grid0Range.y * 4.0)/2u);" % (svoNum)
+	shaderSource += "\n        baseCoord.z = (float (pixCoord.y / uint(grid%dRange.y * 4.0)) * float(tilingSide) + float (pixCoord.x / uint(grid%dRange.x * 4.0))) * 4.0 - float(uint(grid%dRange.z * 4.0)/2u);" % (svoNum, svoNum, svoNum)
+	shaderSource += "\n        baseCoord *= 0.25;"
+	shaderSource += "\n        if ( baseCoord.z >= grid%dMax.z )" % (svoNum)
+	shaderSource += "\n        {"
+	shaderSource += "\n            fragColor = texelFetch (iChannel%d, ivec2(fragCoord - vec2 (0.5)), 0);" % (svoNum)
+	shaderSource += "\n            return ;"
+	shaderSource += "\n        }"
+	shaderSource += "\n"
+	shaderSource += "\n        vec4 fragmentRead = texelFetch (iChannel%d, ivec2(fragCoord - vec2 (0.5)), 0);" % (svoNum)
+	shaderSource += "\n        uint baseR = floatBitsToUint(fragmentRead.x);"
+	shaderSource += "\n        uint baseG = floatBitsToUint(fragmentRead.y);"
+	shaderSource += "\n        uint baseB = floatBitsToUint(fragmentRead.z);"
+	shaderSource += "\n        uint baseA = floatBitsToUint(fragmentRead.a);"
+	shaderSource += "\n        float offsetAmt = pow (2.0, offsetPower);"
+	shaderSource += "\n        for (int zBrick = 0; zBrick != 4; zBrick++)"
+	shaderSource += "\n        {"
+	shaderSource += "\n            vec3 curCoord = baseCoord + vec3 (0, 0, float(zBrick) * 0.25);"
+	shaderSource += "\n"
+	shaderSource += "\n            float minDist = 100000.0;"
+	shaderSource += "\n            uvec3 minCoord = uvec3 (0);"
+	shaderSource += "\n            bool foundMinCoord = false;"
+	shaderSource += "\n            for (int i = -1; i != 2; i++)"
+	shaderSource += "\n                for (int j = -1; j != 2; j++)"
+	shaderSource += "\n                    for (int k = -1; k != 2; k++)"
+	shaderSource += "\n                    {"
+	shaderSource += "\n                        vec3 sampleLoc = curCoord + vec3(i, j, k) * 0.25 * offsetAmt; "
+	shaderSource += "\n"
+	shaderSource += "\n                        if ( sampleLoc.x < grid%dMin.x || sampleLoc.x >= grid%dMax.x ) continue;" % (svoNum, svoNum)
+	shaderSource += "\n                        if ( sampleLoc.y < grid%dMin.y || sampleLoc.y >= grid%dMax.y ) continue;" % (svoNum, svoNum)
+	shaderSource += "\n                        if ( sampleLoc.z < grid%dMin.z || sampleLoc.z >= grid%dMax.z ) continue;" % (svoNum, svoNum)
+	shaderSource += "\n"
+	shaderSource += "\n                        float diffZ = sampleLoc.z - grid%dMin.z;" % (svoNum)
+	shaderSource += "\n                        float fractionalZ = fract(diffZ);"
+	shaderSource += "\n                        uint topLevelZ = uint(diffZ);"
+	shaderSource += "\n                        uint xBase = (topLevelZ %% tilingSide) * 4u * uint(grid%dRange.x);" % (svoNum)
+	shaderSource += "\n                        uint yBase = (topLevelZ / tilingSide) * 4u * uint(grid%dRange.y);" % (svoNum)
+	shaderSource += "\n                        xBase += uint ((sampleLoc.x - grid%dMin.x) * 4.0);" % (svoNum)
+	shaderSource += "\n                        yBase += uint ((sampleLoc.y - grid%dMin.y) * 4.0);" % (svoNum)
+	shaderSource += "\n"
+	shaderSource += "\n                        vec4 readFrag = texelFetch (iChannel%d, ivec2(xBase, yBase), 0);" % (svoNum)
+	shaderSource += "\n                        uint readUint;"
+	shaderSource += "\n                        if ( fractionalZ == 0.0 ) readUint = floatBitsToUint (readFrag.x);"
+	shaderSource += "\n                        else if ( fractionalZ == 0.25 ) readUint = floatBitsToUint (readFrag.y);"
+	shaderSource += "\n                        else if ( fractionalZ == 0.5 ) readUint = floatBitsToUint (readFrag.z);"
+	shaderSource += "\n                        else readUint = floatBitsToUint (readFrag.a);"
+	shaderSource += "\n"
+	shaderSource += "\n                        uint readR = ((readUint & 0x00FF0000u) >> 16);"
+	shaderSource += "\n                        uint readG = ((readUint & 0x0000FF00u) >> 8);"
+	shaderSource += "\n                        uint readB = (readUint  & 0x000000FFu);"
+	shaderSource += "\n                        vec3 sampledCoord = (vec3 (readR, readG, readB) - vec3(uint(grid%dRange * 4.0)/2u)) * 0.25;" % (svoNum)
+	shaderSource += "\n"
+	shaderSource += "\n                        float sampledDist = length (sampledCoord - curCoord);"
+	shaderSource += "\n"
+	shaderSource += "\n                        if ( readUint != 0u && sampledDist < minDist)"
+	shaderSource += "\n                        {"
+	shaderSource += "\n                           minDist = sampledDist;"
+	shaderSource += "\n                           minCoord = uvec3 (readR, readG, readB);"
+	shaderSource += "\n                           foundMinCoord = true;"
+	shaderSource += "\n                        }"
+	shaderSource += "\n                    }"
+	shaderSource += "\n"
+	shaderSource += "\n            if ( !foundMinCoord ) continue;"
+	shaderSource += "\n            if ( zBrick == 0 )"
+	shaderSource += "\n            {"
+	shaderSource += "\n                baseR = 0xFF000000u;"
+	shaderSource += "\n                baseR |= (minCoord.x << 16);"
+	shaderSource += "\n                baseR |= (minCoord.y << 8);"
+	shaderSource += "\n                baseR |= minCoord.z;"
+	shaderSource += "\n            }"
+	shaderSource += "\n            else if ( zBrick == 1 )"
+	shaderSource += "\n            {"
+	shaderSource += "\n                baseG = 0xFF000000u;"
+	shaderSource += "\n                baseG |= (minCoord.x << 16);"
+	shaderSource += "\n                baseG |= (minCoord.y << 8);"
+	shaderSource += "\n                baseG |= minCoord.z;"
+	shaderSource += "\n            }"
+	shaderSource += "\n            else if ( zBrick == 2 )"
+	shaderSource += "\n            {"
+	shaderSource += "\n                baseB = 0xFF000000u;"
+	shaderSource += "\n                baseB |= (minCoord.x << 16);"
+	shaderSource += "\n                baseB |= (minCoord.y << 8);"
+	shaderSource += "\n                baseB |= minCoord.z;"
+	shaderSource += "\n            }"
+	shaderSource += "\n            else"
+	shaderSource += "\n            {"
+	shaderSource += "\n                baseA = 0xFF000000u;"
+	shaderSource += "\n                baseA |= (minCoord.x << 16);"
+	shaderSource += "\n                baseA |= (minCoord.y << 8);"
+	shaderSource += "\n                baseA |= minCoord.z;"
+	shaderSource += "\n            }"
+	shaderSource += "\n        }"
+	shaderSource += "\n"
+	shaderSource += "\n        fragColor = vec4 (uintBitsToFloat(baseR), uintBitsToFloat(baseG), uintBitsToFloat(baseB), uintBitsToFloat(baseA));"
+	shaderSource += "\n    } else if ( iFrame > 0 && offsetPower == -1.0 ) {"
+	shaderSource += "\n        if ( !isInJFACompactionResolution )"
+	shaderSource += "\n        {"
+	shaderSource += "\n            fragColor = texelFetch (iChannel%d, ivec2(fragCoord - vec2 (0.5)), 0);" % (svoNum)
+	shaderSource += "\n            return ;"
+	shaderSource += "\n        }"
+	shaderSource += "\n        vec3 baseCoord;"
+	shaderSource += "\n        baseCoord.x = float (pixCoord.x %% uint(grid%dRange.x * 4.0)) - float(uint(grid%dRange.x * 4.0)/2u);" % (svoNum, svoNum)
+	shaderSource += "\n        baseCoord.y = float (pixCoord.y %% uint(grid%dRange.y * 4.0)) - float(uint(grid%dRange.y * 4.0)/2u);" % (svoNum, svoNum)
+	shaderSource += "\n        baseCoord.z = float (pixCoord.y / uint(grid%dRange.y * 4.0)) * 16.0 - float(uint(grid%dRange.z * 4.0)/2u);" % (svoNum, svoNum)
+	shaderSource += "\n        baseCoord *= 0.25;"
+	shaderSource += "\n        uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;"
+	shaderSource += "\n        for (int i = 0; i != 16; i++)"
+	shaderSource += "\n        {"
+	shaderSource += "\n            vec3 sampleLoc = baseCoord + vec3 (0, 0, float(i) * 0.25);"
+	shaderSource += "\n"            
+	shaderSource += "\n            if ( sampleLoc.x < grid%dMin.x || sampleLoc.x >= grid%dMax.x ) continue;" % (svoNum, svoNum)
+	shaderSource += "\n            if ( sampleLoc.y < grid%dMin.y || sampleLoc.y >= grid%dMax.y ) continue;" % (svoNum, svoNum)
+	shaderSource += "\n            if ( sampleLoc.z < grid%dMin.z || sampleLoc.z >= grid%dMax.z ) continue;" % (svoNum, svoNum)
+	shaderSource += "\n"
+	shaderSource += "\n            float diffZ = sampleLoc.z - grid%dMin.z;" % (svoNum)
+	shaderSource += "\n            float fractionalZ = fract(diffZ);"
+	shaderSource += "\n            uint topLevelZ = uint(diffZ);"
+	shaderSource += "\n            uint xBase = (topLevelZ %% tilingSide) * 4u * uint(grid%dRange.x);" % (svoNum)
+	shaderSource += "\n            uint yBase = (topLevelZ / tilingSide) * 4u * uint(grid%dRange.y);" % (svoNum)
+	shaderSource += "\n            xBase += uint ((sampleLoc.x - grid%dMin.x) * 4.0);" % (svoNum)
+	shaderSource += "\n            yBase += uint ((sampleLoc.y - grid%dMin.y) * 4.0);" % (svoNum)
+	shaderSource += "\n"
+	shaderSource += "\n            vec4 readFrag = texelFetch (iChannel%d, ivec2(xBase, yBase), 0);" % (svoNum)
+	shaderSource += "\n            uint readUint;"
+	shaderSource += "\n            if ( fractionalZ == 0.0 ) readUint = floatBitsToUint (readFrag.x);"
+	shaderSource += "\n            else if ( fractionalZ == 0.25 ) readUint = floatBitsToUint (readFrag.y);"
+	shaderSource += "\n            else if ( fractionalZ == 0.5 ) readUint = floatBitsToUint (readFrag.z);"
+	shaderSource += "\n            else readUint = floatBitsToUint (readFrag.a);"
+	shaderSource += "\n"
+	shaderSource += "\n            uint readR = ((readUint & 0x00FF0000u) >> 16);"
+	shaderSource += "\n            uint readG = ((readUint & 0x0000FF00u) >> 8);"
+	shaderSource += "\n            uint readB = (readUint  & 0x000000FFu);"
+	shaderSource += "\n            vec3 sampledCoord = (vec3 (readR, readG, readB) - vec3(uint(grid%dRange * 4.0)/2u)) * 0.25;" % (svoNum)
+	shaderSource += "\n"
+	shaderSource += "\n            float sampledDist = clamp (floor (length (sampledCoord - sampleLoc) * 10.0), 0.0, 255.0);"
+	shaderSource += "\n            int channelSelect = i / 4;"
+	shaderSource += "\n            int shiftAmount = 24 - ((i % 4) * 8);"
+	shaderSource += "\n            switch (channelSelect)"
+	shaderSource += "\n            {"
+	shaderSource += "\n                case 0:"
+	shaderSource += "\n                    writeR |= (uint(sampledDist) << shiftAmount);"
+	shaderSource += "\n                    break;"
+	shaderSource += "\n                case 1:"
+	shaderSource += "\n                    writeG |= (uint(sampledDist) << shiftAmount);"
+	shaderSource += "\n                    break;"
+	shaderSource += "\n                case 2:"
+	shaderSource += "\n                    writeB |= (uint(sampledDist) << shiftAmount);"
+	shaderSource += "\n                    break;"
+	shaderSource += "\n                case 3:"
+	shaderSource += "\n                    writeA |= (uint(sampledDist) << shiftAmount);"
+	shaderSource += "\n                    break;"
+	shaderSource += "\n            }"
+	shaderSource += "\n        }"
+	shaderSource += "\n        fragColor = vec4 (uintBitsToFloat(writeR), uintBitsToFloat(writeG), uintBitsToFloat(writeB), uintBitsToFloat(writeA));"
+	shaderSource += "\n    } else"
+	shaderSource += "\n        fragColor = texelFetch (iChannel%d, ivec2(fragCoord - vec2 (0.5)), 0);" % (svoNum)
+	shaderSource += "\n}"
+	shaderSource += "\n\nfloat sdfGrid%d(vec3 p)" % (svoNum)
+	shaderSource += "\n{"
+	shaderSource += "\n    p = floor (p * 4.0) * 0.25;"
+	shaderSource += "\n    if ( clamp (p, grid%dMin, grid%dMax - vec3 (0.25)) != p ) return 0.25;" % (svoNum, svoNum)
+	shaderSource += "\n"    
+	shaderSource += "\n    float pzBlock = (p.z - grid%dMin.z) * 4.0;" % (svoNum)
+	shaderSource += "\n    uint diffZ = uint (pzBlock * 0.0625);"
+	shaderSource += "\n    uint xBase = uint ((p.x - grid%dMin.x) * 4.0);" % (svoNum)
+	shaderSource += "\n    uint yBase = uint ((p.y - grid%dMin.y) * 4.0);" % (svoNum)
+	shaderSource += "\n    yBase += diffZ * uint (grid%dRange.y * 4.0);" % (svoNum)
+	shaderSource += "\n    uint pickChannelBits = uint (pzBlock) % 16u;"
+	shaderSource += "\n    uint pickedUint;"
+	shaderSource += "\n    vec4 readTexel = texelFetch (iChannel%d, ivec2(xBase, yBase), 0);" % (svoNum)
+	shaderSource += "\n    switch (pickChannelBits / 4u)"
+	shaderSource += "\n    {"
+	shaderSource += "\n        case 0u:"
+	shaderSource += "\n            pickedUint = floatBitsToUint (readTexel.x);"
+	shaderSource += "\n            break;"
+	shaderSource += "\n        case 1u:"
+	shaderSource += "\n            pickedUint = floatBitsToUint (readTexel.y);"
+	shaderSource += "\n            break;"
+	shaderSource += "\n        case 2u:"
+	shaderSource += "\n            pickedUint = floatBitsToUint (readTexel.z);"
+	shaderSource += "\n            break;"
+	shaderSource += "\n        case 3u:"
+	shaderSource += "\n            pickedUint = floatBitsToUint (readTexel.a);"
+	shaderSource += "\n            break;"
+	shaderSource += "\n    }"
+	shaderSource += "\n"
+	shaderSource += "\n    uint fetchShift = (24u - ((pickChannelBits % 4u) * 8u));"
+	shaderSource += "\n    uint readDistance = ((pickedUint & (0x000000FFu << fetchShift)) >> fetchShift);"
+	shaderSource += "\n"
+	shaderSource += "\n    return float(readDistance) * 0.1;"
+	shaderSource += "\n}"
 	return shaderSource
 
 def textToBuffer(textContent, shaderSoFar = "", textId = 0):

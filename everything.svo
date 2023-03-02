@@ -170,7 +170,7 @@ bool traceRaySVO0(vec3 p1, vec3 p2, out vec3 hitPos) {
 
 void decodeSVO0( inout vec4 fragColor, vec2 fragCoord ) {
     uvec2 pixCoord = uvec2 (fragCoord - vec2 (0.5));
-    if ( iFrame % 60 == 0 && all (lessThan (pixCoord,uvec2 (uint(grid0Range.x), uint(grid0Range.y * grid0Range.y)/2u))) ) {
+    if ( iFrame % 60 == 0 && all (lessThan (pixCoord,uvec2 (uint(grid0Range.x), uint(grid0Range.y * grid0Range.z)/2u))) ) {
         uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;
         vec3 baseCoord;
         baseCoord.x = float (pixCoord.x % uint(grid0Range.x)) - float(uint(grid0Range.x)/2u);
@@ -239,6 +239,270 @@ bool occupancyReadGrid0 (vec3 samplePos) {
     uint maskBits = (1u << shiftBits);
     if ( (readUint & maskBits) == 0u ) return false;
     return true;
+}
+
+void decodeAndJFA_SVO0( out vec4 fragColor, in vec2 fragCoord )
+{
+    uvec2 pixCoord = uvec2 (fragCoord - vec2 (0.5));
+    const uint tilingSide = uint (floor (sqrt(grid0Range.z))) + 1u;
+
+    int log2N = int(ceil(log2(max (max(grid0Range.x * 4.0, grid0Range.y * 4.0), grid0Range.z * 4.0))));
+    float offsetPower = float (log2N - (iFrame-1) - 1);
+    bool isInJFAResolution = all (lessThan (pixCoord,uvec2 (uint(grid0Range.x), uint(grid0Range.y)) * 4u * tilingSide));
+    float zRange = ceil (grid0Range.z * 4.0 * 0.0625);
+    bool isInJFACompactionResolution = all (lessThan (pixCoord, uvec2 (uint(grid0Range.x * 4.0), uint(grid0Range.y * 4.0 * zRange))));
+
+    if ( iFrame == 0 && isInJFAResolution ) {
+        vec3 baseCoord;
+        baseCoord.x = float (pixCoord.x % uint(grid0Range.x * 4.0)) - float(uint(grid0Range.x * 4.0)/2u);
+        baseCoord.y = float (pixCoord.y % uint(grid0Range.y * 4.0)) - float(uint(grid0Range.y * 4.0)/2u);
+        baseCoord.z = (float (pixCoord.y / uint(grid0Range.y * 4.0)) * float(tilingSide) + float (pixCoord.x / uint(grid0Range.x * 4.0))) * 4.0 - float(uint(grid0Range.z * 4.0)/2u);
+        baseCoord *= 0.25;
+        if ( baseCoord.z >= grid0Max.z )
+        {
+            fragColor = vec4 (uintBitsToFloat(0u), uintBitsToFloat(0u), uintBitsToFloat(0u), uintBitsToFloat(0u));
+            return ;
+        }
+        uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;
+        vec3 pos1 = baseCoord + vec3 (0, 0, 0);
+        vec3 pos2 = baseCoord + vec3 (0, 0, 0.25);
+        vec3 pos3 = baseCoord + vec3 (0, 0, 0.5);
+        vec3 pos4 = baseCoord + vec3 (0, 0, 0.75);
+        bool occupancy1 = readLeafSVO0 (pos1 + vec3 (0.001, -0.001, 0.001));
+        bool occupancy2 = readLeafSVO0 (pos2 + vec3 (0.001, -0.001, 0.001));
+        bool occupancy3 = readLeafSVO0 (pos3 + vec3 (0.001, -0.001, 0.001));
+        bool occupancy4 = readLeafSVO0 (pos4 + vec3 (0.001, -0.001, 0.001));
+        if ( occupancy1 )
+        {
+            pos1 *= 4.0;
+            pos1 += vec3(uint(grid0Range * 4.0)/2u);
+            writeR = 0xFF000000u;
+            writeR |= (uint(pos1.x) << 16);
+            writeR |= (uint(pos1.y) << 8);
+            writeR |= uint(pos1.z);
+        }
+        if ( occupancy2 )
+        {
+            pos2 *= 4.0;
+            pos2 += vec3(uint(grid0Range * 4.0)/2u);
+            writeG = 0xFF000000u;
+            writeG |= (uint(pos2.x) << 16);
+            writeG |= (uint(pos2.y) << 8);
+            writeG |= uint(pos2.z);
+        }
+        if ( occupancy3 )
+        {
+            pos3 *= 4.0;
+            pos3 += vec3(uint(grid0Range * 4.0)/2u);
+            writeB = 0xFF000000u;
+            writeB |= (uint(pos3.x) << 16);
+            writeB |= (uint(pos3.y) << 8);
+            writeB |= uint(pos3.z);
+        }
+        if ( occupancy4 )
+        {
+            pos4 *= 4.0;
+            pos4 += vec3(uint(grid0Range * 4.0)/2u);
+            writeA = 0xFF000000u;
+            writeA |= (uint(pos4.x) << 16);
+            writeA |= (uint(pos4.y) << 8);
+            writeA |= uint(pos4.z);
+        }
+        fragColor = vec4 (uintBitsToFloat(writeR), uintBitsToFloat(writeG), uintBitsToFloat(writeB), uintBitsToFloat(writeA));
+    } else if ( iFrame > 0 && offsetPower >= 0.0 && isInJFAResolution ) {
+        vec3 baseCoord;
+        baseCoord.x = float (pixCoord.x % uint(grid0Range.x * 4.0)) - float(uint(grid0Range.x * 4.0)/2u);
+        baseCoord.y = float (pixCoord.y % uint(grid0Range.y * 4.0)) - float(uint(grid0Range.y * 4.0)/2u);
+        baseCoord.z = (float (pixCoord.y / uint(grid0Range.y * 4.0)) * float(tilingSide) + float (pixCoord.x / uint(grid0Range.x * 4.0))) * 4.0 - float(uint(grid0Range.z * 4.0)/2u);
+        baseCoord *= 0.25;
+        if ( baseCoord.z >= grid0Max.z )
+        {
+            fragColor = texelFetch (iChannel0, ivec2(fragCoord - vec2 (0.5)), 0);
+            return ;
+        }
+
+        vec4 fragmentRead = texelFetch (iChannel0, ivec2(fragCoord - vec2 (0.5)), 0);
+        uint baseR = floatBitsToUint(fragmentRead.x);
+        uint baseG = floatBitsToUint(fragmentRead.y);
+        uint baseB = floatBitsToUint(fragmentRead.z);
+        uint baseA = floatBitsToUint(fragmentRead.a);
+        float offsetAmt = pow (2.0, offsetPower);
+        for (int zBrick = 0; zBrick != 4; zBrick++)
+        {
+            vec3 curCoord = baseCoord + vec3 (0, 0, float(zBrick) * 0.25);
+
+            float minDist = 100000.0;
+            uvec3 minCoord = uvec3 (0);
+            bool foundMinCoord = false;
+            for (int i = -1; i != 2; i++)
+                for (int j = -1; j != 2; j++)
+                    for (int k = -1; k != 2; k++)
+                    {
+                        vec3 sampleLoc = curCoord + vec3(i, j, k) * 0.25 * offsetAmt; 
+
+                        if ( sampleLoc.x < grid0Min.x || sampleLoc.x >= grid0Max.x ) continue;
+                        if ( sampleLoc.y < grid0Min.y || sampleLoc.y >= grid0Max.y ) continue;
+                        if ( sampleLoc.z < grid0Min.z || sampleLoc.z >= grid0Max.z ) continue;
+
+                        float diffZ = sampleLoc.z - grid0Min.z;
+                        float fractionalZ = fract(diffZ);
+                        uint topLevelZ = uint(diffZ);
+                        uint xBase = (topLevelZ % tilingSide) * 4u * uint(grid0Range.x);
+                        uint yBase = (topLevelZ / tilingSide) * 4u * uint(grid0Range.y);
+                        xBase += uint ((sampleLoc.x - grid0Min.x) * 4.0);
+                        yBase += uint ((sampleLoc.y - grid0Min.y) * 4.0);
+
+                        vec4 readFrag = texelFetch (iChannel0, ivec2(xBase, yBase), 0);
+                        uint readUint;
+                        if ( fractionalZ == 0.0 ) readUint = floatBitsToUint (readFrag.x);
+                        else if ( fractionalZ == 0.25 ) readUint = floatBitsToUint (readFrag.y);
+                        else if ( fractionalZ == 0.5 ) readUint = floatBitsToUint (readFrag.z);
+                        else readUint = floatBitsToUint (readFrag.a);
+
+                        uint readR = ((readUint & 0x00FF0000u) >> 16);
+                        uint readG = ((readUint & 0x0000FF00u) >> 8);
+                        uint readB = (readUint  & 0x000000FFu);
+                        vec3 sampledCoord = (vec3 (readR, readG, readB) - vec3(uint(grid0Range * 4.0)/2u)) * 0.25;
+
+                        float sampledDist = length (sampledCoord - curCoord);
+
+                        if ( readUint != 0u && sampledDist < minDist)
+                        {
+                           minDist = sampledDist;
+                           minCoord = uvec3 (readR, readG, readB);
+                           foundMinCoord = true;
+                        }
+                    }
+
+            if ( !foundMinCoord ) continue;
+            if ( zBrick == 0 )
+            {
+                baseR = 0xFF000000u;
+                baseR |= (minCoord.x << 16);
+                baseR |= (minCoord.y << 8);
+                baseR |= minCoord.z;
+            }
+            else if ( zBrick == 1 )
+            {
+                baseG = 0xFF000000u;
+                baseG |= (minCoord.x << 16);
+                baseG |= (minCoord.y << 8);
+                baseG |= minCoord.z;
+            }
+            else if ( zBrick == 2 )
+            {
+                baseB = 0xFF000000u;
+                baseB |= (minCoord.x << 16);
+                baseB |= (minCoord.y << 8);
+                baseB |= minCoord.z;
+            }
+            else
+            {
+                baseA = 0xFF000000u;
+                baseA |= (minCoord.x << 16);
+                baseA |= (minCoord.y << 8);
+                baseA |= minCoord.z;
+            }
+        }
+
+        fragColor = vec4 (uintBitsToFloat(baseR), uintBitsToFloat(baseG), uintBitsToFloat(baseB), uintBitsToFloat(baseA));
+    } else if ( iFrame > 0 && offsetPower == -1.0 ) {
+        if ( !isInJFACompactionResolution )
+        {
+            fragColor = texelFetch (iChannel0, ivec2(fragCoord - vec2 (0.5)), 0);
+            return ;
+        }
+        vec3 baseCoord;
+        baseCoord.x = float (pixCoord.x % uint(grid0Range.x * 4.0)) - float(uint(grid0Range.x * 4.0)/2u);
+        baseCoord.y = float (pixCoord.y % uint(grid0Range.y * 4.0)) - float(uint(grid0Range.y * 4.0)/2u);
+        baseCoord.z = float (pixCoord.y / uint(grid0Range.y * 4.0)) * 16.0 - float(uint(grid0Range.z * 4.0)/2u);
+        baseCoord *= 0.25;
+        uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;
+        for (int i = 0; i != 16; i++)
+        {
+            vec3 sampleLoc = baseCoord + vec3 (0, 0, float(i) * 0.25);
+
+            if ( sampleLoc.x < grid0Min.x || sampleLoc.x >= grid0Max.x ) continue;
+            if ( sampleLoc.y < grid0Min.y || sampleLoc.y >= grid0Max.y ) continue;
+            if ( sampleLoc.z < grid0Min.z || sampleLoc.z >= grid0Max.z ) continue;
+
+            float diffZ = sampleLoc.z - grid0Min.z;
+            float fractionalZ = fract(diffZ);
+            uint topLevelZ = uint(diffZ);
+            uint xBase = (topLevelZ % tilingSide) * 4u * uint(grid0Range.x);
+            uint yBase = (topLevelZ / tilingSide) * 4u * uint(grid0Range.y);
+            xBase += uint ((sampleLoc.x - grid0Min.x) * 4.0);
+            yBase += uint ((sampleLoc.y - grid0Min.y) * 4.0);
+
+            vec4 readFrag = texelFetch (iChannel0, ivec2(xBase, yBase), 0);
+            uint readUint;
+            if ( fractionalZ == 0.0 ) readUint = floatBitsToUint (readFrag.x);
+            else if ( fractionalZ == 0.25 ) readUint = floatBitsToUint (readFrag.y);
+            else if ( fractionalZ == 0.5 ) readUint = floatBitsToUint (readFrag.z);
+            else readUint = floatBitsToUint (readFrag.a);
+
+            uint readR = ((readUint & 0x00FF0000u) >> 16);
+            uint readG = ((readUint & 0x0000FF00u) >> 8);
+            uint readB = (readUint  & 0x000000FFu);
+            vec3 sampledCoord = (vec3 (readR, readG, readB) - vec3(uint(grid0Range * 4.0)/2u)) * 0.25;
+
+            float sampledDist = clamp (floor (length (sampledCoord - sampleLoc) * 10.0), 0.0, 255.0);
+            int channelSelect = i / 4;
+            int shiftAmount = 24 - ((i % 4) * 8);
+            switch (channelSelect)
+            {
+                case 0:
+                    writeR |= (uint(sampledDist) << shiftAmount);
+                    break;
+                case 1:
+                    writeG |= (uint(sampledDist) << shiftAmount);
+                    break;
+                case 2:
+                    writeB |= (uint(sampledDist) << shiftAmount);
+                    break;
+                case 3:
+                    writeA |= (uint(sampledDist) << shiftAmount);
+                    break;
+            }
+        }
+        fragColor = vec4 (uintBitsToFloat(writeR), uintBitsToFloat(writeG), uintBitsToFloat(writeB), uintBitsToFloat(writeA));
+    } else
+        fragColor = texelFetch (iChannel0, ivec2(fragCoord - vec2 (0.5)), 0);
+}
+
+float sdfGrid0(vec3 p)
+{
+    p = floor (p * 4.0) * 0.25;
+    if ( clamp (p, grid0Min, grid0Max - vec3 (0.25)) != p ) return 0.25;
+
+    float pzBlock = (p.z - grid0Min.z) * 4.0;
+    uint diffZ = uint (pzBlock * 0.0625);
+    uint xBase = uint ((p.x - grid0Min.x) * 4.0);
+    uint yBase = uint ((p.y - grid0Min.y) * 4.0);
+    yBase += diffZ * uint (grid0Range.y * 4.0);
+    uint pickChannelBits = uint (pzBlock) % 16u;
+    uint pickedUint;
+    vec4 readTexel = texelFetch (iChannel0, ivec2(xBase, yBase), 0);
+    switch (pickChannelBits / 4u)
+    {
+        case 0u:
+            pickedUint = floatBitsToUint (readTexel.x);
+            break;
+        case 1u:
+            pickedUint = floatBitsToUint (readTexel.y);
+            break;
+        case 2u:
+            pickedUint = floatBitsToUint (readTexel.z);
+            break;
+        case 3u:
+            pickedUint = floatBitsToUint (readTexel.a);
+            break;
+    }
+
+    uint fetchShift = (24u - ((pickChannelBits % 4u) * 8u));
+    uint readDistance = ((pickedUint & (0x000000FFu << fetchShift)) >> fetchShift);
+
+    return float(readDistance) * 0.1;
 }
 const vec3 grid1Min = vec3 (-5.00, -5.00, -5.00);
 const vec3 grid1Max = vec3 (5.00, 5.00, 5.00);
@@ -373,7 +637,7 @@ bool traceRaySVO1(vec3 p1, vec3 p2, out vec3 hitPos) {
 
 void decodeSVO1( inout vec4 fragColor, vec2 fragCoord ) {
     uvec2 pixCoord = uvec2 (fragCoord - vec2 (0.5));
-    if ( iFrame % 60 == 0 && all (lessThan (pixCoord,uvec2 (uint(grid1Range.x), uint(grid1Range.y * grid1Range.y)/2u))) ) {
+    if ( iFrame % 60 == 0 && all (lessThan (pixCoord,uvec2 (uint(grid1Range.x), uint(grid1Range.y * grid1Range.z)/2u))) ) {
         uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;
         vec3 baseCoord;
         baseCoord.x = float (pixCoord.x % uint(grid1Range.x)) - float(uint(grid1Range.x)/2u);
@@ -442,6 +706,270 @@ bool occupancyReadGrid1 (vec3 samplePos) {
     uint maskBits = (1u << shiftBits);
     if ( (readUint & maskBits) == 0u ) return false;
     return true;
+}
+
+void decodeAndJFA_SVO1( out vec4 fragColor, in vec2 fragCoord )
+{
+    uvec2 pixCoord = uvec2 (fragCoord - vec2 (0.5));
+    const uint tilingSide = uint (floor (sqrt(grid1Range.z))) + 1u;
+
+    int log2N = int(ceil(log2(max (max(grid1Range.x * 4.0, grid1Range.y * 4.0), grid1Range.z * 4.0))));
+    float offsetPower = float (log2N - (iFrame-1) - 1);
+    bool isInJFAResolution = all (lessThan (pixCoord,uvec2 (uint(grid1Range.x), uint(grid1Range.y)) * 4u * tilingSide));
+    float zRange = ceil (grid1Range.z * 4.0 * 0.0625);
+    bool isInJFACompactionResolution = all (lessThan (pixCoord, uvec2 (uint(grid1Range.x * 4.0), uint(grid1Range.y * 4.0 * zRange))));
+
+    if ( iFrame == 0 && isInJFAResolution ) {
+        vec3 baseCoord;
+        baseCoord.x = float (pixCoord.x % uint(grid1Range.x * 4.0)) - float(uint(grid1Range.x * 4.0)/2u);
+        baseCoord.y = float (pixCoord.y % uint(grid1Range.y * 4.0)) - float(uint(grid1Range.y * 4.0)/2u);
+        baseCoord.z = (float (pixCoord.y / uint(grid1Range.y * 4.0)) * float(tilingSide) + float (pixCoord.x / uint(grid1Range.x * 4.0))) * 4.0 - float(uint(grid1Range.z * 4.0)/2u);
+        baseCoord *= 0.25;
+        if ( baseCoord.z >= grid1Max.z )
+        {
+            fragColor = vec4 (uintBitsToFloat(0u), uintBitsToFloat(0u), uintBitsToFloat(0u), uintBitsToFloat(0u));
+            return ;
+        }
+        uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;
+        vec3 pos1 = baseCoord + vec3 (0, 0, 0);
+        vec3 pos2 = baseCoord + vec3 (0, 0, 0.25);
+        vec3 pos3 = baseCoord + vec3 (0, 0, 0.5);
+        vec3 pos4 = baseCoord + vec3 (0, 0, 0.75);
+        bool occupancy1 = readLeafSVO1 (pos1 + vec3 (0.001, -0.001, 0.001));
+        bool occupancy2 = readLeafSVO1 (pos2 + vec3 (0.001, -0.001, 0.001));
+        bool occupancy3 = readLeafSVO1 (pos3 + vec3 (0.001, -0.001, 0.001));
+        bool occupancy4 = readLeafSVO1 (pos4 + vec3 (0.001, -0.001, 0.001));
+        if ( occupancy1 )
+        {
+            pos1 *= 4.0;
+            pos1 += vec3(uint(grid1Range * 4.0)/2u);
+            writeR = 0xFF000000u;
+            writeR |= (uint(pos1.x) << 16);
+            writeR |= (uint(pos1.y) << 8);
+            writeR |= uint(pos1.z);
+        }
+        if ( occupancy2 )
+        {
+            pos2 *= 4.0;
+            pos2 += vec3(uint(grid1Range * 4.0)/2u);
+            writeG = 0xFF000000u;
+            writeG |= (uint(pos2.x) << 16);
+            writeG |= (uint(pos2.y) << 8);
+            writeG |= uint(pos2.z);
+        }
+        if ( occupancy3 )
+        {
+            pos3 *= 4.0;
+            pos3 += vec3(uint(grid1Range * 4.0)/2u);
+            writeB = 0xFF000000u;
+            writeB |= (uint(pos3.x) << 16);
+            writeB |= (uint(pos3.y) << 8);
+            writeB |= uint(pos3.z);
+        }
+        if ( occupancy4 )
+        {
+            pos4 *= 4.0;
+            pos4 += vec3(uint(grid1Range * 4.0)/2u);
+            writeA = 0xFF000000u;
+            writeA |= (uint(pos4.x) << 16);
+            writeA |= (uint(pos4.y) << 8);
+            writeA |= uint(pos4.z);
+        }
+        fragColor = vec4 (uintBitsToFloat(writeR), uintBitsToFloat(writeG), uintBitsToFloat(writeB), uintBitsToFloat(writeA));
+    } else if ( iFrame > 0 && offsetPower >= 0.0 && isInJFAResolution ) {
+        vec3 baseCoord;
+        baseCoord.x = float (pixCoord.x % uint(grid1Range.x * 4.0)) - float(uint(grid0Range.x * 4.0)/2u);
+        baseCoord.y = float (pixCoord.y % uint(grid1Range.y * 4.0)) - float(uint(grid0Range.y * 4.0)/2u);
+        baseCoord.z = (float (pixCoord.y / uint(grid1Range.y * 4.0)) * float(tilingSide) + float (pixCoord.x / uint(grid1Range.x * 4.0))) * 4.0 - float(uint(grid1Range.z * 4.0)/2u);
+        baseCoord *= 0.25;
+        if ( baseCoord.z >= grid1Max.z )
+        {
+            fragColor = texelFetch (iChannel1, ivec2(fragCoord - vec2 (0.5)), 0);
+            return ;
+        }
+
+        vec4 fragmentRead = texelFetch (iChannel1, ivec2(fragCoord - vec2 (0.5)), 0);
+        uint baseR = floatBitsToUint(fragmentRead.x);
+        uint baseG = floatBitsToUint(fragmentRead.y);
+        uint baseB = floatBitsToUint(fragmentRead.z);
+        uint baseA = floatBitsToUint(fragmentRead.a);
+        float offsetAmt = pow (2.0, offsetPower);
+        for (int zBrick = 0; zBrick != 4; zBrick++)
+        {
+            vec3 curCoord = baseCoord + vec3 (0, 0, float(zBrick) * 0.25);
+
+            float minDist = 100000.0;
+            uvec3 minCoord = uvec3 (0);
+            bool foundMinCoord = false;
+            for (int i = -1; i != 2; i++)
+                for (int j = -1; j != 2; j++)
+                    for (int k = -1; k != 2; k++)
+                    {
+                        vec3 sampleLoc = curCoord + vec3(i, j, k) * 0.25 * offsetAmt; 
+
+                        if ( sampleLoc.x < grid1Min.x || sampleLoc.x >= grid1Max.x ) continue;
+                        if ( sampleLoc.y < grid1Min.y || sampleLoc.y >= grid1Max.y ) continue;
+                        if ( sampleLoc.z < grid1Min.z || sampleLoc.z >= grid1Max.z ) continue;
+
+                        float diffZ = sampleLoc.z - grid1Min.z;
+                        float fractionalZ = fract(diffZ);
+                        uint topLevelZ = uint(diffZ);
+                        uint xBase = (topLevelZ % tilingSide) * 4u * uint(grid1Range.x);
+                        uint yBase = (topLevelZ / tilingSide) * 4u * uint(grid1Range.y);
+                        xBase += uint ((sampleLoc.x - grid1Min.x) * 4.0);
+                        yBase += uint ((sampleLoc.y - grid1Min.y) * 4.0);
+
+                        vec4 readFrag = texelFetch (iChannel1, ivec2(xBase, yBase), 0);
+                        uint readUint;
+                        if ( fractionalZ == 0.0 ) readUint = floatBitsToUint (readFrag.x);
+                        else if ( fractionalZ == 0.25 ) readUint = floatBitsToUint (readFrag.y);
+                        else if ( fractionalZ == 0.5 ) readUint = floatBitsToUint (readFrag.z);
+                        else readUint = floatBitsToUint (readFrag.a);
+
+                        uint readR = ((readUint & 0x00FF0000u) >> 16);
+                        uint readG = ((readUint & 0x0000FF00u) >> 8);
+                        uint readB = (readUint  & 0x000000FFu);
+                        vec3 sampledCoord = (vec3 (readR, readG, readB) - vec3(uint(grid1Range * 4.0)/2u)) * 0.25;
+
+                        float sampledDist = length (sampledCoord - curCoord);
+
+                        if ( readUint != 0u && sampledDist < minDist)
+                        {
+                           minDist = sampledDist;
+                           minCoord = uvec3 (readR, readG, readB);
+                           foundMinCoord = true;
+                        }
+                    }
+
+            if ( !foundMinCoord ) continue;
+            if ( zBrick == 0 )
+            {
+                baseR = 0xFF000000u;
+                baseR |= (minCoord.x << 16);
+                baseR |= (minCoord.y << 8);
+                baseR |= minCoord.z;
+            }
+            else if ( zBrick == 1 )
+            {
+                baseG = 0xFF000000u;
+                baseG |= (minCoord.x << 16);
+                baseG |= (minCoord.y << 8);
+                baseG |= minCoord.z;
+            }
+            else if ( zBrick == 2 )
+            {
+                baseB = 0xFF000000u;
+                baseB |= (minCoord.x << 16);
+                baseB |= (minCoord.y << 8);
+                baseB |= minCoord.z;
+            }
+            else
+            {
+                baseA = 0xFF000000u;
+                baseA |= (minCoord.x << 16);
+                baseA |= (minCoord.y << 8);
+                baseA |= minCoord.z;
+            }
+        }
+
+        fragColor = vec4 (uintBitsToFloat(baseR), uintBitsToFloat(baseG), uintBitsToFloat(baseB), uintBitsToFloat(baseA));
+    } else if ( iFrame > 0 && offsetPower == -1.0 ) {
+        if ( !isInJFACompactionResolution )
+        {
+            fragColor = texelFetch (iChannel1, ivec2(fragCoord - vec2 (0.5)), 0);
+            return ;
+        }
+        vec3 baseCoord;
+        baseCoord.x = float (pixCoord.x % uint(grid1Range.x * 4.0)) - float(uint(grid1Range.x * 4.0)/2u);
+        baseCoord.y = float (pixCoord.y % uint(grid1Range.y * 4.0)) - float(uint(grid1Range.y * 4.0)/2u);
+        baseCoord.z = float (pixCoord.y / uint(grid1Range.y * 4.0)) * 16.0 - float(uint(grid1Range.z * 4.0)/2u);
+        baseCoord *= 0.25;
+        uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;
+        for (int i = 0; i != 16; i++)
+        {
+            vec3 sampleLoc = baseCoord + vec3 (0, 0, float(i) * 0.25);
+
+            if ( sampleLoc.x < grid1Min.x || sampleLoc.x >= grid1Max.x ) continue;
+            if ( sampleLoc.y < grid1Min.y || sampleLoc.y >= grid1Max.y ) continue;
+            if ( sampleLoc.z < grid1Min.z || sampleLoc.z >= grid1Max.z ) continue;
+
+            float diffZ = sampleLoc.z - grid1Min.z;
+            float fractionalZ = fract(diffZ);
+            uint topLevelZ = uint(diffZ);
+            uint xBase = (topLevelZ % tilingSide) * 4u * uint(grid1Range.x);
+            uint yBase = (topLevelZ / tilingSide) * 4u * uint(grid1Range.y);
+            xBase += uint ((sampleLoc.x - grid1Min.x) * 4.0);
+            yBase += uint ((sampleLoc.y - grid1Min.y) * 4.0);
+
+            vec4 readFrag = texelFetch (iChannel1, ivec2(xBase, yBase), 0);
+            uint readUint;
+            if ( fractionalZ == 0.0 ) readUint = floatBitsToUint (readFrag.x);
+            else if ( fractionalZ == 0.25 ) readUint = floatBitsToUint (readFrag.y);
+            else if ( fractionalZ == 0.5 ) readUint = floatBitsToUint (readFrag.z);
+            else readUint = floatBitsToUint (readFrag.a);
+
+            uint readR = ((readUint & 0x00FF0000u) >> 16);
+            uint readG = ((readUint & 0x0000FF00u) >> 8);
+            uint readB = (readUint  & 0x000000FFu);
+            vec3 sampledCoord = (vec3 (readR, readG, readB) - vec3(uint(grid1Range * 4.0)/2u)) * 0.25;
+
+            float sampledDist = clamp (floor (length (sampledCoord - sampleLoc) * 10.0), 0.0, 255.0);
+            int channelSelect = i / 4;
+            int shiftAmount = 24 - ((i % 4) * 8);
+            switch (channelSelect)
+            {
+                case 0:
+                    writeR |= (uint(sampledDist) << shiftAmount);
+                    break;
+                case 1:
+                    writeG |= (uint(sampledDist) << shiftAmount);
+                    break;
+                case 2:
+                    writeB |= (uint(sampledDist) << shiftAmount);
+                    break;
+                case 3:
+                    writeA |= (uint(sampledDist) << shiftAmount);
+                    break;
+            }
+        }
+        fragColor = vec4 (uintBitsToFloat(writeR), uintBitsToFloat(writeG), uintBitsToFloat(writeB), uintBitsToFloat(writeA));
+    } else
+        fragColor = texelFetch (iChannel1, ivec2(fragCoord - vec2 (0.5)), 0);
+}
+
+float sdfGrid1(vec3 p)
+{
+    p = floor (p * 4.0) * 0.25;
+    if ( clamp (p, grid1Min, grid1Max - vec3 (0.25)) != p ) return 0.25;
+
+    float pzBlock = (p.z - grid1Min.z) * 4.0;
+    uint diffZ = uint (pzBlock * 0.0625);
+    uint xBase = uint ((p.x - grid1Min.x) * 4.0);
+    uint yBase = uint ((p.y - grid1Min.y) * 4.0);
+    yBase += diffZ * uint (grid1Range.y * 4.0);
+    uint pickChannelBits = uint (pzBlock) % 16u;
+    uint pickedUint;
+    vec4 readTexel = texelFetch (iChannel1, ivec2(xBase, yBase), 0);
+    switch (pickChannelBits / 4u)
+    {
+        case 0u:
+            pickedUint = floatBitsToUint (readTexel.x);
+            break;
+        case 1u:
+            pickedUint = floatBitsToUint (readTexel.y);
+            break;
+        case 2u:
+            pickedUint = floatBitsToUint (readTexel.z);
+            break;
+        case 3u:
+            pickedUint = floatBitsToUint (readTexel.a);
+            break;
+    }
+
+    uint fetchShift = (24u - ((pickChannelBits % 4u) * 8u));
+    uint readDistance = ((pickedUint & (0x000000FFu << fetchShift)) >> fetchShift);
+
+    return float(readDistance) * 0.1;
 }
 const vec3 grid2Min = vec3 (-5.00, -5.00, -5.00);
 const vec3 grid2Max = vec3 (5.00, 5.00, 5.00);
@@ -576,7 +1104,7 @@ bool traceRaySVO2(vec3 p1, vec3 p2, out vec3 hitPos) {
 
 void decodeSVO2( inout vec4 fragColor, vec2 fragCoord ) {
     uvec2 pixCoord = uvec2 (fragCoord - vec2 (0.5));
-    if ( iFrame % 60 == 0 && all (lessThan (pixCoord,uvec2 (uint(grid2Range.x), uint(grid2Range.y * grid2Range.y)/2u))) ) {
+    if ( iFrame % 60 == 0 && all (lessThan (pixCoord,uvec2 (uint(grid2Range.x), uint(grid2Range.y * grid2Range.z)/2u))) ) {
         uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;
         vec3 baseCoord;
         baseCoord.x = float (pixCoord.x % uint(grid2Range.x)) - float(uint(grid2Range.x)/2u);
@@ -645,4 +1173,268 @@ bool occupancyReadGrid2 (vec3 samplePos) {
     uint maskBits = (1u << shiftBits);
     if ( (readUint & maskBits) == 0u ) return false;
     return true;
+}
+
+void decodeAndJFA_SVO2( out vec4 fragColor, in vec2 fragCoord )
+{
+    uvec2 pixCoord = uvec2 (fragCoord - vec2 (0.5));
+    const uint tilingSide = uint (floor (sqrt(grid2Range.z))) + 1u;
+
+    int log2N = int(ceil(log2(max (max(grid2Range.x * 4.0, grid2Range.y * 4.0), grid2Range.z * 4.0))));
+    float offsetPower = float (log2N - (iFrame-1) - 1);
+    bool isInJFAResolution = all (lessThan (pixCoord,uvec2 (uint(grid2Range.x), uint(grid2Range.y)) * 4u * tilingSide));
+    float zRange = ceil (grid2Range.z * 4.0 * 0.0625);
+    bool isInJFACompactionResolution = all (lessThan (pixCoord, uvec2 (uint(grid2Range.x * 4.0), uint(grid2Range.y * 4.0 * zRange))));
+
+    if ( iFrame == 0 && isInJFAResolution ) {
+        vec3 baseCoord;
+        baseCoord.x = float (pixCoord.x % uint(grid2Range.x * 4.0)) - float(uint(grid2Range.x * 4.0)/2u);
+        baseCoord.y = float (pixCoord.y % uint(grid2Range.y * 4.0)) - float(uint(grid2Range.y * 4.0)/2u);
+        baseCoord.z = (float (pixCoord.y / uint(grid2Range.y * 4.0)) * float(tilingSide) + float (pixCoord.x / uint(grid2Range.x * 4.0))) * 4.0 - float(uint(grid2Range.z * 4.0)/2u);
+        baseCoord *= 0.25;
+        if ( baseCoord.z >= grid2Max.z )
+        {
+            fragColor = vec4 (uintBitsToFloat(0u), uintBitsToFloat(0u), uintBitsToFloat(0u), uintBitsToFloat(0u));
+            return ;
+        }
+        uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;
+        vec3 pos1 = baseCoord + vec3 (0, 0, 0);
+        vec3 pos2 = baseCoord + vec3 (0, 0, 0.25);
+        vec3 pos3 = baseCoord + vec3 (0, 0, 0.5);
+        vec3 pos4 = baseCoord + vec3 (0, 0, 0.75);
+        bool occupancy1 = readLeafSVO2 (pos1 + vec3 (0.001, -0.001, 0.001));
+        bool occupancy2 = readLeafSVO2 (pos2 + vec3 (0.001, -0.001, 0.001));
+        bool occupancy3 = readLeafSVO2 (pos3 + vec3 (0.001, -0.001, 0.001));
+        bool occupancy4 = readLeafSVO2 (pos4 + vec3 (0.001, -0.001, 0.001));
+        if ( occupancy1 )
+        {
+            pos1 *= 4.0;
+            pos1 += vec3(uint(grid2Range * 4.0)/2u);
+            writeR = 0xFF000000u;
+            writeR |= (uint(pos1.x) << 16);
+            writeR |= (uint(pos1.y) << 8);
+            writeR |= uint(pos1.z);
+        }
+        if ( occupancy2 )
+        {
+            pos2 *= 4.0;
+            pos2 += vec3(uint(grid2Range * 4.0)/2u);
+            writeG = 0xFF000000u;
+            writeG |= (uint(pos2.x) << 16);
+            writeG |= (uint(pos2.y) << 8);
+            writeG |= uint(pos2.z);
+        }
+        if ( occupancy3 )
+        {
+            pos3 *= 4.0;
+            pos3 += vec3(uint(grid2Range * 4.0)/2u);
+            writeB = 0xFF000000u;
+            writeB |= (uint(pos3.x) << 16);
+            writeB |= (uint(pos3.y) << 8);
+            writeB |= uint(pos3.z);
+        }
+        if ( occupancy4 )
+        {
+            pos4 *= 4.0;
+            pos4 += vec3(uint(grid2Range * 4.0)/2u);
+            writeA = 0xFF000000u;
+            writeA |= (uint(pos4.x) << 16);
+            writeA |= (uint(pos4.y) << 8);
+            writeA |= uint(pos4.z);
+        }
+        fragColor = vec4 (uintBitsToFloat(writeR), uintBitsToFloat(writeG), uintBitsToFloat(writeB), uintBitsToFloat(writeA));
+    } else if ( iFrame > 0 && offsetPower >= 0.0 && isInJFAResolution ) {
+        vec3 baseCoord;
+        baseCoord.x = float (pixCoord.x % uint(grid2Range.x * 4.0)) - float(uint(grid0Range.x * 4.0)/2u);
+        baseCoord.y = float (pixCoord.y % uint(grid2Range.y * 4.0)) - float(uint(grid0Range.y * 4.0)/2u);
+        baseCoord.z = (float (pixCoord.y / uint(grid2Range.y * 4.0)) * float(tilingSide) + float (pixCoord.x / uint(grid2Range.x * 4.0))) * 4.0 - float(uint(grid2Range.z * 4.0)/2u);
+        baseCoord *= 0.25;
+        if ( baseCoord.z >= grid2Max.z )
+        {
+            fragColor = texelFetch (iChannel2, ivec2(fragCoord - vec2 (0.5)), 0);
+            return ;
+        }
+
+        vec4 fragmentRead = texelFetch (iChannel2, ivec2(fragCoord - vec2 (0.5)), 0);
+        uint baseR = floatBitsToUint(fragmentRead.x);
+        uint baseG = floatBitsToUint(fragmentRead.y);
+        uint baseB = floatBitsToUint(fragmentRead.z);
+        uint baseA = floatBitsToUint(fragmentRead.a);
+        float offsetAmt = pow (2.0, offsetPower);
+        for (int zBrick = 0; zBrick != 4; zBrick++)
+        {
+            vec3 curCoord = baseCoord + vec3 (0, 0, float(zBrick) * 0.25);
+
+            float minDist = 100000.0;
+            uvec3 minCoord = uvec3 (0);
+            bool foundMinCoord = false;
+            for (int i = -1; i != 2; i++)
+                for (int j = -1; j != 2; j++)
+                    for (int k = -1; k != 2; k++)
+                    {
+                        vec3 sampleLoc = curCoord + vec3(i, j, k) * 0.25 * offsetAmt; 
+
+                        if ( sampleLoc.x < grid2Min.x || sampleLoc.x >= grid2Max.x ) continue;
+                        if ( sampleLoc.y < grid2Min.y || sampleLoc.y >= grid2Max.y ) continue;
+                        if ( sampleLoc.z < grid2Min.z || sampleLoc.z >= grid2Max.z ) continue;
+
+                        float diffZ = sampleLoc.z - grid2Min.z;
+                        float fractionalZ = fract(diffZ);
+                        uint topLevelZ = uint(diffZ);
+                        uint xBase = (topLevelZ % tilingSide) * 4u * uint(grid2Range.x);
+                        uint yBase = (topLevelZ / tilingSide) * 4u * uint(grid2Range.y);
+                        xBase += uint ((sampleLoc.x - grid2Min.x) * 4.0);
+                        yBase += uint ((sampleLoc.y - grid2Min.y) * 4.0);
+
+                        vec4 readFrag = texelFetch (iChannel2, ivec2(xBase, yBase), 0);
+                        uint readUint;
+                        if ( fractionalZ == 0.0 ) readUint = floatBitsToUint (readFrag.x);
+                        else if ( fractionalZ == 0.25 ) readUint = floatBitsToUint (readFrag.y);
+                        else if ( fractionalZ == 0.5 ) readUint = floatBitsToUint (readFrag.z);
+                        else readUint = floatBitsToUint (readFrag.a);
+
+                        uint readR = ((readUint & 0x00FF0000u) >> 16);
+                        uint readG = ((readUint & 0x0000FF00u) >> 8);
+                        uint readB = (readUint  & 0x000000FFu);
+                        vec3 sampledCoord = (vec3 (readR, readG, readB) - vec3(uint(grid2Range * 4.0)/2u)) * 0.25;
+
+                        float sampledDist = length (sampledCoord - curCoord);
+
+                        if ( readUint != 0u && sampledDist < minDist)
+                        {
+                           minDist = sampledDist;
+                           minCoord = uvec3 (readR, readG, readB);
+                           foundMinCoord = true;
+                        }
+                    }
+
+            if ( !foundMinCoord ) continue;
+            if ( zBrick == 0 )
+            {
+                baseR = 0xFF000000u;
+                baseR |= (minCoord.x << 16);
+                baseR |= (minCoord.y << 8);
+                baseR |= minCoord.z;
+            }
+            else if ( zBrick == 1 )
+            {
+                baseG = 0xFF000000u;
+                baseG |= (minCoord.x << 16);
+                baseG |= (minCoord.y << 8);
+                baseG |= minCoord.z;
+            }
+            else if ( zBrick == 2 )
+            {
+                baseB = 0xFF000000u;
+                baseB |= (minCoord.x << 16);
+                baseB |= (minCoord.y << 8);
+                baseB |= minCoord.z;
+            }
+            else
+            {
+                baseA = 0xFF000000u;
+                baseA |= (minCoord.x << 16);
+                baseA |= (minCoord.y << 8);
+                baseA |= minCoord.z;
+            }
+        }
+
+        fragColor = vec4 (uintBitsToFloat(baseR), uintBitsToFloat(baseG), uintBitsToFloat(baseB), uintBitsToFloat(baseA));
+    } else if ( iFrame > 0 && offsetPower == -1.0 ) {
+        if ( !isInJFACompactionResolution )
+        {
+            fragColor = texelFetch (iChannel2, ivec2(fragCoord - vec2 (0.5)), 0);
+            return ;
+        }
+        vec3 baseCoord;
+        baseCoord.x = float (pixCoord.x % uint(grid2Range.x * 4.0)) - float(uint(grid2Range.x * 4.0)/2u);
+        baseCoord.y = float (pixCoord.y % uint(grid2Range.y * 4.0)) - float(uint(grid2Range.y * 4.0)/2u);
+        baseCoord.z = float (pixCoord.y / uint(grid2Range.y * 4.0)) * 16.0 - float(uint(grid2Range.z * 4.0)/2u);
+        baseCoord *= 0.25;
+        uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;
+        for (int i = 0; i != 16; i++)
+        {
+            vec3 sampleLoc = baseCoord + vec3 (0, 0, float(i) * 0.25);
+
+            if ( sampleLoc.x < grid2Min.x || sampleLoc.x >= grid2Max.x ) continue;
+            if ( sampleLoc.y < grid2Min.y || sampleLoc.y >= grid2Max.y ) continue;
+            if ( sampleLoc.z < grid2Min.z || sampleLoc.z >= grid2Max.z ) continue;
+
+            float diffZ = sampleLoc.z - grid2Min.z;
+            float fractionalZ = fract(diffZ);
+            uint topLevelZ = uint(diffZ);
+            uint xBase = (topLevelZ % tilingSide) * 4u * uint(grid2Range.x);
+            uint yBase = (topLevelZ / tilingSide) * 4u * uint(grid2Range.y);
+            xBase += uint ((sampleLoc.x - grid2Min.x) * 4.0);
+            yBase += uint ((sampleLoc.y - grid2Min.y) * 4.0);
+
+            vec4 readFrag = texelFetch (iChannel2, ivec2(xBase, yBase), 0);
+            uint readUint;
+            if ( fractionalZ == 0.0 ) readUint = floatBitsToUint (readFrag.x);
+            else if ( fractionalZ == 0.25 ) readUint = floatBitsToUint (readFrag.y);
+            else if ( fractionalZ == 0.5 ) readUint = floatBitsToUint (readFrag.z);
+            else readUint = floatBitsToUint (readFrag.a);
+
+            uint readR = ((readUint & 0x00FF0000u) >> 16);
+            uint readG = ((readUint & 0x0000FF00u) >> 8);
+            uint readB = (readUint  & 0x000000FFu);
+            vec3 sampledCoord = (vec3 (readR, readG, readB) - vec3(uint(grid2Range * 4.0)/2u)) * 0.25;
+
+            float sampledDist = clamp (floor (length (sampledCoord - sampleLoc) * 10.0), 0.0, 255.0);
+            int channelSelect = i / 4;
+            int shiftAmount = 24 - ((i % 4) * 8);
+            switch (channelSelect)
+            {
+                case 0:
+                    writeR |= (uint(sampledDist) << shiftAmount);
+                    break;
+                case 1:
+                    writeG |= (uint(sampledDist) << shiftAmount);
+                    break;
+                case 2:
+                    writeB |= (uint(sampledDist) << shiftAmount);
+                    break;
+                case 3:
+                    writeA |= (uint(sampledDist) << shiftAmount);
+                    break;
+            }
+        }
+        fragColor = vec4 (uintBitsToFloat(writeR), uintBitsToFloat(writeG), uintBitsToFloat(writeB), uintBitsToFloat(writeA));
+    } else
+        fragColor = texelFetch (iChannel2, ivec2(fragCoord - vec2 (0.5)), 0);
+}
+
+float sdfGrid2(vec3 p)
+{
+    p = floor (p * 4.0) * 0.25;
+    if ( clamp (p, grid2Min, grid2Max - vec3 (0.25)) != p ) return 0.25;
+
+    float pzBlock = (p.z - grid2Min.z) * 4.0;
+    uint diffZ = uint (pzBlock * 0.0625);
+    uint xBase = uint ((p.x - grid2Min.x) * 4.0);
+    uint yBase = uint ((p.y - grid2Min.y) * 4.0);
+    yBase += diffZ * uint (grid2Range.y * 4.0);
+    uint pickChannelBits = uint (pzBlock) % 16u;
+    uint pickedUint;
+    vec4 readTexel = texelFetch (iChannel2, ivec2(xBase, yBase), 0);
+    switch (pickChannelBits / 4u)
+    {
+        case 0u:
+            pickedUint = floatBitsToUint (readTexel.x);
+            break;
+        case 1u:
+            pickedUint = floatBitsToUint (readTexel.y);
+            break;
+        case 2u:
+            pickedUint = floatBitsToUint (readTexel.z);
+            break;
+        case 3u:
+            pickedUint = floatBitsToUint (readTexel.a);
+            break;
+    }
+
+    uint fetchShift = (24u - ((pickChannelBits % 4u) * 8u));
+    uint readDistance = ((pickedUint & (0x000000FFu << fetchShift)) >> fetchShift);
+
+    return float(readDistance) * 0.1;
 }
