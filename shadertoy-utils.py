@@ -607,7 +607,7 @@ def SVOToBitstream(plyFileName, shaderSoFar = "", svoNum = 0):
 	shaderSource += "\n}"
 	shaderSource += "\n\nvoid decodeSVO%d( inout vec4 fragColor, vec2 fragCoord ) {" % (svoNum)
 	shaderSource += "\n    uvec2 pixCoord = uvec2 (fragCoord - vec2 (0.5));"
-	shaderSource += "\n    if ( iFrame %% 60 == 0 && all (lessThan (pixCoord,uvec2 (uint(grid%dRange.x), uint(grid%dRange.y * grid%dRange.y)/2u))) ) {" % (svoNum, svoNum, svoNum)
+	shaderSource += "\n    if ( iFrame %% 60 == 0 && all (lessThan (pixCoord,uvec2 (uint(grid%dRange.x), uint(grid%dRange.y * grid%dRange.z)/2u))) ) {" % (svoNum, svoNum, svoNum)
 	shaderSource += "\n        uint writeR = 0u, writeG = 0u, writeB = 0u, writeA = 0u;"
 	shaderSource += "\n        vec3 baseCoord;"
 	shaderSource += "\n        baseCoord.x = float (pixCoord.x %% uint(grid%dRange.x)) - float(uint(grid%dRange.x)/2u);" % (svoNum, svoNum)
